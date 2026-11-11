@@ -4,6 +4,8 @@ In [The Binding of the Agent](https://github.com/EeveelutionaryBiologist/Binding
 into ever-deeper codebases and dies to a Merge Conflict. This project asks the obvious follow-up question: can we teach
 a neural network to die there instead of us?
 
+<img width="960" height="640" alt="How this is probably going to look in practice." src="screenshots/flood-rain.png" />
+
 The plan is a reinforcement learning agent that plays the game headless, at a few thousand times real time, on exactly
 one home computer and whatever patience we have left. It gets the same information a human player sees on screen and nothing
 more, so no peeking at disguised enemies or secret rooms. It also gets the same keys, minus the debug cheats.
