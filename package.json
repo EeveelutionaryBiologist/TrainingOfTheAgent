@@ -1,0 +1,17 @@
+{
+  "name": "bota-environment-harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Environment harness for The Binding of the Agent: headless loading, frame-exact stepping, scenarios, fair observation",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test 'js/test/*.test.js'",
+    "check:determinism": "node bench/determinism.js",
+    "check:browser": "node bench/browser_determinism.js",
+    "check:test-room": "node bench/test_room.js",
+    "bench:heavy": "node bench/heavy_rooms.js",
+    "bench:instances": "node bench/instances.js",
+    "bench:bridge": "python3 bench/bridge_bench.py"
+  }
+}

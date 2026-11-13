@@ -1,0 +1,51 @@
+/*
+ * index.js — Node entry point of the harness: load the pinned game and hand out environments.
+ */
+'use strict';
+
+const { loadGame, PINNED } = require('./loader.js');
+const { Env } = require('../core/env.js');
+const Scenario = require('../core/scenario.js');
+const Recorder = require('../core/recorder.js');
+const Sim = require('../core/sim.js');
+const pkg = require('../../package.json');
+
+const games = new Map();
+
+/** loadGame with a per-process cache, so the checkout is verified and read once per configuration */
+function getGame(opts) {
+  const o = opts || {};
+  const key = JSON.stringify([o.gameDir || null, o.profile || null, o.detMath === undefined ? null : !!o.detMath, !!o.sharedCode, !!o.allowUnpinned]);
+  if (!games.has(key)) games.set(key, loadGame(o));
+  return games.get(key);
+}
+
+/** Everything that identifies how a run was produced (R16); stored in transcripts */
+function describe(game, envOpts) {
+  return {
+    harness: pkg.version,
+    game: { tag: PINNED.tag, commit: game.source.commit, pinned: game.source.pinned },
+    profile: game.profile,
+    detMath: game.detMath,
+    frameSkip: envOpts.frameSkip === undefined ? 4 : envOpts.frameSkip,
+    node: process.version,
+  };
+}
+
+/**
+ * Create one environment.
+ * opts: loader options (gameDir, profile, detMath, allowUnpinned, sharedCode) plus Env options
+ *       (frameSkip, record, consoleFaults, flowLimit)
+ */
+function createEnv(opts) {
+  const o = opts || {};
+  const game = getGame(o);
+  const env = new Env(() => game.createInstance(), {
+    frameSkip: o.frameSkip, record: o.record, consoleFaults: o.consoleFaults, flowLimit: o.flowLimit,
+    meta: describe(game, o),
+  });
+  env.gameSource = game;
+  return env;
+}
+
+module.exports = { createEnv, getGame, describe, Env, Scenario, Recorder, Sim, PINNED };

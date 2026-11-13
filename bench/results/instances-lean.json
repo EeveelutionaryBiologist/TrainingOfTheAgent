@@ -1,0 +1,78 @@
+{
+  "profile": "lean",
+  "secs": 4,
+  "single": [
+    {
+      "K": 1,
+      "fps": 353583,
+      "rssMB": 113.4,
+      "heapMB": 13.8,
+      "baseRssMB": 43.6,
+      "loadedRssMB": 61.5,
+      "episodes": 15,
+      "consoleErrors": 0
+    },
+    {
+      "K": 4,
+      "fps": 207274,
+      "rssMB": 121.4,
+      "heapMB": 32.3,
+      "baseRssMB": 43.7,
+      "loadedRssMB": 61.5,
+      "episodes": 17,
+      "consoleErrors": 0
+    },
+    {
+      "K": 16,
+      "fps": 143864,
+      "rssMB": 174.5,
+      "heapMB": 50.6,
+      "baseRssMB": 43.8,
+      "loadedRssMB": 61.6,
+      "episodes": 22,
+      "consoleErrors": 0
+    },
+    {
+      "K": 64,
+      "fps": 77535,
+      "rssMB": 288.7,
+      "heapMB": 153.7,
+      "baseRssMB": 43.8,
+      "loadedRssMB": 61.8,
+      "episodes": 26,
+      "consoleErrors": 0
+    }
+  ],
+  "parallel": [
+    {
+      "P": 1,
+      "K": 1,
+      "totalFps": 396459,
+      "totalRssMB": 112.9
+    },
+    {
+      "P": 8,
+      "K": 1,
+      "totalFps": 1365455,
+      "totalRssMB": 901.9
+    },
+    {
+      "P": 16,
+      "K": 1,
+      "totalFps": 1524410,
+      "totalRssMB": 1742.1
+    },
+    {
+      "P": 32,
+      "K": 1,
+      "totalFps": 1143556,
+      "totalRssMB": 3110.3
+    },
+    {
+      "P": 16,
+      "K": 8,
+      "totalFps": 276504,
+      "totalRssMB": 1840.1
+    }
+  ]
+}
