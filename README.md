@@ -16,4 +16,4 @@ optimism.
 This is an experiment, and it may well fail. If it does, we will at least know why, and the agent will have been
 killed by a Flaky Test several million times, which is more than most of us can say.
 
-Nothing is built yet. See [REQUIREMENTS.md](REQUIREMENTS.md) for what we intend to build.
+See [REQUIREMENTS.md](REQUIREMENTS.md) for the current plan.
