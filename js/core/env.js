@@ -10,14 +10,16 @@
  *   - faults (R6): an exception in the game, or a console.error from it, ends the episode as truncated with a
  *     fault record (seed, frame, state); it never propagates to the caller
  *   - recording: the key events of an episode, for replay (js/core/recorder.js)
+ *   - privileged side channel (R12): event counters of the last decision (env.events) and control calls
+ *     (env.call); neither is part of any observation
  *
- * No Node dependencies: CommonJS module in Node, global `BotaEnv` in a browser page (after BotaSim and
- * BotaScenario).
+ * No Node dependencies: CommonJS module in Node, global `BotaEnv` in a browser page (after BotaSim, BotaScenario,
+ * BotaEvents, BotaProbe and BotaControl).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./sim.js'), require('./scenario.js'));
-  else root.BotaEnv = factory(root.BotaSim, root.BotaScenario);
-})(typeof self !== 'undefined' ? self : this, function (S, Scenario) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./sim.js'), require('./scenario.js'), require('./events.js'), require('./control.js'));
+  else root.BotaEnv = factory(root.BotaSim, root.BotaScenario, root.BotaEvents, root.BotaControl);
+})(typeof self !== 'undefined' ? self : this, function (S, Scenario, Events, Control) {
   'use strict';
 
   const TRANSCRIPT_FORMAT = 1;
@@ -35,6 +37,7 @@
      *   consoleFaults  'error' (default) | 'warn' | 'off': which console output of the game ends the episode
      *   flowLimit      max consecutive non-play frames before the episode is declared stuck (default 1200)
      *   meta           free-form description stored in transcripts (game version, profile, ...)
+     *   testHooks      allow the fault-injection control calls (the harness's own tests only)
      * }
      */
     constructor(makeInstance, opts) {
@@ -47,6 +50,8 @@
       if (!this.consoleLevels) throw new RangeError('consoleFaults must be "error", "warn" or "off"');
       this.flowLimit = o.flowLimit || 1200;
       this.meta = o.meta || {};
+      this.testHooks = !!o.testHooks;
+      this.events = null;    // EventCounter of the current instance: events of the last decision
       this.inst = null;
       this.sim = null;
       this.broken = false;
@@ -66,6 +71,7 @@
       if (!this.sim || this.broken) {
         this.inst = this.makeInstance();
         this.sim = new S.Sim(this.inst.B, this.inst.host);
+        this.events = new Events.EventCounter(this.inst.B);
         this.broken = false;
         this.instancesBuilt++;
       }
@@ -74,6 +80,7 @@
       const ep = this.episode = {
         scenario: sc,
         done: false, terminated: false, truncated: false, reason: null, fault: null,
+        tampered: false,     // a mutating control call was used: the key recording no longer explains the episode
         frame: 0,            // simulation frames since reset, play and non-play
         startFrame: 0,       // frame at which the agent got control
         playFrames: 0, nonPlayFrames: 0, decisions: 0,
@@ -88,6 +95,7 @@
         this._fault(ep, 'exception', err);
       }
       this._consoleCheck(ep);
+      this.events.clear();    // setup (items given, rooms entered) is not the agent's doing
       ep.frame = ep.startFrame = sim.frame;
       ep.nonPlayFrames = 0;   // counted from the moment the agent has control
       if (this.record && !ep.done) {
@@ -112,6 +120,7 @@
         throw new RangeError(`action out of range: move ${move} (0..8), shoot ${shoot} (0..4)`);
       }
       const sim = this.sim;
+      this.events.clear();
       try {
         S.applyAction(sim, move, shoot, push ? 1 : 0, active ? 1 : 0);
         ep.decisions++;
@@ -196,6 +205,18 @@
     }
 
     /**
+     * Privileged control call on the running episode (js/core/control.js): debug hooks and state snapshots.
+     * A call that changes the game marks the episode as tampered. Never reachable through step().
+     */
+    call(name, args) {
+      const ep = this.episode;
+      if (!ep || !this.sim || this.broken) throw new Error('call() needs an episode; call reset() first');
+      const out = Control.call(this.sim.B, name, args, this.testHooks);
+      if (out.mutates) ep.tampered = true;
+      return out.result;
+    }
+
+    /**
      * Transcript of the current (usually finished) episode: enough to replay it frame by frame.
      * Requires opts.record. See js/core/recorder.js.
      */
@@ -215,6 +236,7 @@
         codes: ep.codes.slice(),
         keys: ep.keys.slice(),      // flat triples: frame, index into codes, 1 = down / 0 = up
         result: { terminated: ep.terminated, truncated: ep.truncated, reason: ep.reason, playFrames: ep.playFrames, nonPlayFrames: ep.nonPlayFrames, decisions: ep.decisions },
+        tampered: ep.tampered,      // true: control calls changed the game, a replay will not match
         signature,
       };
     }

@@ -35,7 +35,8 @@
   'use strict';
 
   class ScenarioError extends Error {
-    constructor(message) { super(message); this.name = 'ScenarioError'; }
+    /** retryable: the scenario is valid but does not work with this seed; another seed may */
+    constructor(message, retryable) { super(message); this.name = 'ScenarioError'; this.retryable = !!retryable; }
   }
 
   const KINDS = ['full_run', 'test_room'];
@@ -183,7 +184,7 @@
     };
     const dir = (sc.door ? [sc.door] : DOOR_ORDER).find(usable);
     if (!dir) {
-      fail(`seed ${sc.seed}, floor ${sc.depth}: the start room has no unlocked normal room${sc.door ? ' behind its ' + sc.door + ' door' : ' next to it'}; use another seed`);
+      throw new ScenarioError(`seed ${sc.seed}, floor ${sc.depth}: the start room has no unlocked normal room${sc.door ? ' behind its ' + sc.door + ' door' : ' next to it'}; use another seed`, true);
     }
     const cell = start.doors[dir].target;
     const room = cell.room;

@@ -8,6 +8,9 @@ const { Env } = require('../core/env.js');
 const Scenario = require('../core/scenario.js');
 const Recorder = require('../core/recorder.js');
 const Sim = require('../core/sim.js');
+const Events = require('../core/events.js');
+const Probe = require('../core/probe.js');
+const Control = require('../core/control.js');
 const pkg = require('../../package.json');
 
 const games = new Map();
@@ -35,17 +38,17 @@ function describe(game, envOpts) {
 /**
  * Create one environment.
  * opts: loader options (gameDir, profile, detMath, allowUnpinned, sharedCode) plus Env options
- *       (frameSkip, record, consoleFaults, flowLimit)
+ *       (frameSkip, record, consoleFaults, flowLimit, testHooks)
  */
 function createEnv(opts) {
   const o = opts || {};
   const game = getGame(o);
   const env = new Env(() => game.createInstance(), {
     frameSkip: o.frameSkip, record: o.record, consoleFaults: o.consoleFaults, flowLimit: o.flowLimit,
-    meta: describe(game, o),
+    testHooks: o.testHooks, meta: describe(game, o),
   });
   env.gameSource = game;
   return env;
 }
 
-module.exports = { createEnv, getGame, describe, Env, Scenario, Recorder, Sim, PINNED };
+module.exports = { createEnv, getGame, describe, Env, Scenario, Recorder, Sim, Events, Probe, Control, PINNED };
