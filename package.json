@@ -1,6 +1,6 @@
 {
   "name": "bota-environment-harness",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Environment harness for The Binding of the Agent: headless loading, frame-exact stepping, scenarios, fair observation",
   "license": "UNLICENSED",
