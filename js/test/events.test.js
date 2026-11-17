@@ -104,7 +104,7 @@ test('probe: vector and snapshot agree with the game', () => {
   assert.deepEqual(snap.room.enemies.map((e) => e.id).sort(), ['bug', 'bug', 'null_pointer']);
   assert.equal(snap.player.health, 5);
 
-  const boss = createEnv();
+  const boss = createEnv({ observe: 'none' });   // bosses have no reviewed view yet
   const bossId = Object.keys(boss.gameSource.createInstance().B.BOSSES)[0];
   boss.reset({ kind: 'test_room', seed: 'E-PROBE-2', boss: bossId, player: { god: true } });
   Probe.write(boss.B, vec, 1);

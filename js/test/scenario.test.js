@@ -86,7 +86,7 @@ test('player setup: items, health, resources', () => {
 });
 
 test('boss test room: intro is skipped for the agent, clear drops a trapdoor, trapdoor ends on floor_exit', () => {
-  const env = createEnv();
+  const env = createEnv({ observe: 'none' });   // bosses have no reviewed view yet
   let ep = env.reset({ kind: 'test_room', seed: 'T-BOSS-1', boss: 'monolith', player: { god: true }, endOn: ['floor_exit'], maxPlayFrames: 6000 });
   const g = env.game, B = env.B, room = g.room;
   assert.equal(g.state, 'play');
@@ -106,7 +106,7 @@ test('boss test room: intro is skipped for the agent, clear drops a trapdoor, tr
 });
 
 test('boss_kill end condition', () => {
-  const env = createEnv();
+  const env = createEnv({ observe: 'none' });   // bosses have no reviewed view yet
   let ep = env.reset({ kind: 'test_room', seed: 'T-BOSS-2', boss: 'monolith', player: { god: true }, endOn: ['boss_kill'] });
   for (let i = 0; i < 100 && !ep.done; i++) { env.B.debug.killAll(); ep = env.step(0, 0, 0, 0); }
   assert.equal(ep.reason, 'boss_kill');

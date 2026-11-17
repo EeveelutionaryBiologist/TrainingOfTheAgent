@@ -30,7 +30,8 @@ const { mulberry32 } = require('../js/core/sim.js');
 
 /** Episodes played through the Env in Node with a random policy; returns their transcripts */
 function recordTranscripts(detMath) {
-  const env = createEnv({ record: true, detMath });
+  // observe 'none': this check is about determinism and uses enemies the observation has not reviewed yet
+  const env = createEnv({ record: true, detMath, observe: 'none' });
   const scenarios = [
     { kind: 'test_room', seed: 'BR-BUGS', enemies: [{ id: 'bug', count: 3 }, 'null_pointer'], player: { pushes: 5 }, maxPlayFrames: 2400 },
     { kind: 'test_room', seed: 'BR-DEATH', enemies: [{ id: 'null_pointer', count: 8 }], player: { health: 2 } },

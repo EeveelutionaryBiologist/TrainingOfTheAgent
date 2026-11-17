@@ -7,8 +7,8 @@
  *   u32 binLen | binLen bytes of binary | the rest: UTF-8 JSON (may be empty)
  *
  * Requests (one reply each, strictly in order):
- *   1 INIT        json { K, frameSkip, record, probe, profile, detMath, gameDir, allowUnpinned, consoleFaults,
- *                        flowLimit, testHooks, sharedCode } → json: description of the worker (see init())
+ *   1 INIT        json { K, frameSkip, record, probe, obs, profile, detMath, gameDir, allowUnpinned,
+ *                        consoleFaults, flowLimit, testHooks, sharedCode } → json: description of the worker
  *   2 RESET       json { resets: [[i, scenario], ...] }    → bin: records, json { resets: [result, ...] }
  *   3 STEP        bin K*4 action bytes (move, shoot, push, active), json { resets } optional
  *                                                           → bin: records, json only if something happened:
@@ -30,8 +30,10 @@
  *   u8 flags | u8 reason (index into REASONS) | u16 0 | u32 episode | u32 frames | u32 playFrames | u32 decisions |
  *   f32 × events (js/core/events.js) | f32 × probe (js/core/probe.js, only if enabled)
  *
- * The event counters and the probe are PRIVILEGED (reward side, debugging). The observation block that follows
- * the records is empty until the fair observation exists (Phase 3): obs { id: 'none', version: 0, bytes: 0 }.
+ * The event counters and the probe are PRIVILEGED (reward side, debugging).
+ *
+ * After the K records come K observation blocks of obs.bytes each (js/core/observe.js; INIT's `obs` selects
+ * 'v1' or 'none', and the INIT reply carries the full layout). This is the only part meant for a model.
  */
 'use strict';
 
@@ -40,13 +42,13 @@ const fs = require('node:fs');
 // stdout carries the protocol; nothing else may ever write to it
 for (const m of ['log', 'info', 'debug']) console[m] = (...args) => console.error(...args);
 
-const { getGame, describe, Env, Scenario, Events, Probe, Sim } = require('./index.js');
+const { createEnv, getGame, describe, Scenario, Events, Probe, Sim, Observe } = require('./index.js');
 
-const PROTOCOL = 1;
+const PROTOCOL = 2;
 const OP = { INIT: 1, RESET: 2, STEP: 3, CALL: 4, TRANSCRIPT: 5, CLOSE: 6, STATS: 7 };
 const FLAG = { TERMINATED: 1, TRUNCATED: 2, FAULT: 4, RESET: 8, RESET_FAILED: 16 };
-const REASONS = ['none', 'death', 'cycle_end', 'room_clear', 'boss_kill', 'floor_exit', 'time_limit', 'fault'];
-const OBS = { id: 'none', version: 0, bytes: 0 };
+const REASONS = ['none', 'death', 'cycle_end', 'room_clear', 'boss_kill', 'floor_exit', 'time_limit', 'fault', 'unreviewed'];
+let OBS = Observe.NONE;   // layout of the observation block, set by INIT
 const RECORD_HEAD = 20;
 const HEAD = 12;
 
@@ -88,9 +90,13 @@ function init(c) {
   K = c.K;
   const loaderOpts = { gameDir: c.gameDir || undefined, profile: c.profile || undefined, detMath: c.detMath, allowUnpinned: !!c.allowUnpinned, sharedCode: !!c.sharedCode };
   const game = getGame(loaderOpts);
-  const envOpts = { frameSkip: c.frameSkip, record: !!c.record, consoleFaults: c.consoleFaults, flowLimit: c.flowLimit, testHooks: !!c.testHooks };
+  const obsId = c.obs === undefined || c.obs === null ? 'none' : c.obs;
+  if (obsId !== 'none' && obsId !== Observe.ID) throw new RangeError(`unknown observation "${obsId}"; available: none, ${Observe.ID}`);
+  OBS = Observe.describe(obsId);
+  const envOpts = { frameSkip: c.frameSkip, record: !!c.record, consoleFaults: c.consoleFaults, flowLimit: c.flowLimit, testHooks: !!c.testHooks, observe: obsId };
   const meta = describe(game, envOpts);
-  for (let i = 0; i < K; i++) envs.push(new Env(() => game.createInstance(), Object.assign({ meta }, envOpts)));
+  // Each environment gets its own copy of the core, as each game instance has its own compiled code
+  for (let i = 0; i < K; i++) envs.push(createEnv(Object.assign({ sharedCore: !!c.sharedCode }, loaderOpts, envOpts)));
   episodes = new Uint32Array(K);
 
   nEvents = Events.NAMES.length;
@@ -103,6 +109,8 @@ function init(c) {
   u8 = new Uint8Array(out, HEAD);
   u32 = new Uint32Array(out, HEAD, (K * recordBytes) >> 2);
   f32 = new Float32Array(out, HEAD, (K * recordBytes) >> 2);
+  // Each environment's observer writes straight into its slot of the reply
+  if (OBS.bytes) envs.forEach((env, i) => env.observer.bind(out, HEAD + K * recordBytes + i * OBS.bytes));
 
   return Object.assign({}, meta, {
     protocol: PROTOCOL, pid: process.pid, K,
@@ -134,7 +142,7 @@ function writeRecord(i, flags) {
   f32.set(env.events.counts, w + 5);
   if (nProbe) {
     const at = w + 5 + nEvents;
-    try { Probe.write(env.sim.B, f32, at); } catch (err) { f32.fill(0, at, at + nProbe); }   // state may be unusable after a fault
+    try { env.core.Probe.write(env.sim.B, f32, at); } catch (err) { f32.fill(0, at, at + nProbe); }   // state may be unusable after a fault
   }
 }
 

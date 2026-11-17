@@ -22,7 +22,7 @@ def test_spaces_and_description(make_env):
     assert env.observation_space.contains(env.reset(seed=0)[0])
     d = env.describe()
     assert d["game"]["pinned"] is True and d["game"]["tag"] == "v1.0" and len(d["game"]["commit"]) == 40
-    assert d["obs"] == {"id": "none", "version": 0, "bytes": 0}, "no observation exists before Phase 3"
+    assert (d["obs"]["id"], d["obs"]["version"]) == ("v1", 1), "the fair observation is the default"
     assert d["profile"] == "lean" and d["det_math"] is True and d["frame_skip"] == 4
     assert d["workers"] == 2 and d["num_envs"] == 3 and d["task"] == {"name": "none", "version": 0}
     assert d["seed"] is not None
@@ -33,7 +33,7 @@ def test_spaces_and_description(make_env):
 def test_step_shapes_and_counters(make_env, endless_task):
     env = make_env(4, endless_task, workers=2, probe=True)
     obs, info = env.reset(seed=1)
-    assert obs["none"].shape == (4, 1) and not obs["none"].any()
+    assert obs["player"].shape == (4, len(env.obs_columns["player"])) and obs["tiles"].shape == (4, 9, 15)
     assert info["scenario"].shape == (4,) and all(s["kind"] == "test_room" and s["seed"] for s in info["scenario"])
     assert info["probe"].shape == (4, len(env.probe_names))
     for t in range(1, 6):
@@ -181,7 +181,8 @@ def test_single_env_passes_the_gymnasium_checker_and_has_no_autoreset():
     try:
         check_env(env, skip_render_check=True)
         obs, info = env.reset(seed=3)
-        assert obs["none"].shape == (1,) and info["scenario"]["kind"] == "test_room" and info["probe"].ndim == 1
+        assert obs["player"].ndim == 1 and obs["tiles"].shape == (9, 15) and env.observation_space.contains(obs)
+        assert info["scenario"]["kind"] == "test_room" and info["probe"].ndim == 1
         for _ in range(9):
             obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
             assert isinstance(reward, float) and terminated is False and truncated is False

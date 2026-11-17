@@ -40,7 +40,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
         task = ReferenceTask(max_play_frames=args.max_play_frames)
     env = BotaVecEnv(args.envs, task, workers=workers, game_dir=args.game_dir, profile=args.profile,
                      allow_unpinned=args.allow_unpinned, frame_skip=args.frame_skip, spin_wait=args.spin_wait,
-                     shared_code=args.shared_code, probe=args.probe)
+                     shared_code=args.shared_code, probe=args.probe, obs=args.obs)
     try:
         n = env.num_envs
         rng = np.random.default_rng(args.seed)
@@ -74,6 +74,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
         n_eps = sum(episodes.values())
         report = {
             "envs": n, "workers": workers, "frame_skip": env.frame_skip, "scenario": args.scenario,
+            "obs": f"{env.obs_layout['id']} ({env.obs_layout['bytes']} bytes per env)",
             "decisions_per_s": round(steps * n / elapsed), "frames_per_s": round(steps * n * env.frame_skip / elapsed),
             "ms_per_vector_step": round(elapsed / steps * 1e3, 3),
             "worker_busy_share": round(float(np.mean(busy)) / elapsed, 3),
@@ -124,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--spin-wait", type=float, default=0.002)
     p.add_argument("--shared-code", action="store_true")
     p.add_argument("--probe", action="store_true")
+    p.add_argument("--obs", default="v1", choices=["v1", "none"],
+                   help="observation; with v1, full runs end as 'unreviewed' at the first unreviewed enemy")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_bench)

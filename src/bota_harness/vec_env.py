@@ -4,9 +4,9 @@
 simulate in parallel and reads the answers back into shared NumPy arrays.
 
 What the caller gets
-    observation   a placeholder for now: `{"none": zeros}`. The fair observation (REQUIREMENTS §3.3) is Phase 3;
-                  until then nothing about the game reaches the observation, and `describe()["obs"]` says
-                  `{"id": "none", "version": 0}`. (Gymnasium does not accept an empty observation space.)
+    observation   the fair observation, version 1 (REQUIREMENTS §3.3; docs/observation-spec.md): a dict of
+                  fixed-shape arrays holding only what is on screen. `obs="none"` gives a constant placeholder
+                  instead and switches the review gate off; nothing about the game reaches it.
     reward        from the Task, computed from privileged event counters (and the probe if the task asks for it)
     info          reason, play_frames, frames, decisions, events, reset; `probe` if enabled; `result` and `success`
                   when an episode ends; `fault` when a game error or a worker failure ended it
@@ -21,6 +21,8 @@ and frame and kept in `fault_log`.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import time
@@ -53,6 +55,10 @@ class BotaVecEnv(VectorEnv):
         workers: Node processes to spread the environments over; default min(num_envs, CPU count).
         frame_skip: play frames one decision is held for (R4).
         probe: include the raw state probe in `info` and hand it to the task. Default: only if the task needs it.
+        obs: "v1" (default), the fair observation, or "none". With "v1" an episode ends as truncated with reason
+            "unreviewed" as soon as the room holds something the observation has no reviewed view for, and a
+            scenario that sets such a thing up is refused with ScenarioError. "none" is for work where nothing is
+            fed to a model (benchmarks, reward development).
         record: keep the key events of each episode so `transcript(i)` can return a replayable recording.
         autoreset_mode: `AutoresetMode.NEXT_STEP` (default) or `AutoresetMode.DISABLED`.
         profile: load profile of the game, "lean" (default) or "full"; trajectories are identical.
@@ -63,8 +69,9 @@ class BotaVecEnv(VectorEnv):
         step_timeout: seconds a worker may take for one request before it counts as hung.
         spin_wait: seconds `step()` busy-waits for the workers before it sleeps. Sleeping costs a wake-up per
             step, which on power-saving CPUs is far longer than the simulation; set 0 to never busy-wait.
-        shared_code: let all environments of a worker share one compiled copy of the game (default: one copy
-            each). Shared code makes resets cheaper and steps slower; see docs/phase2-results.md.
+        shared_code: let all environments of a worker share one compiled copy of the game and of the harness
+            core (default: one copy each). Shared code makes resets cheaper and steps slower; see
+            docs/phase2-results.md and js/node/core_loader.js.
         max_reset_retries: further attempts when a scenario does not work with the seed drawn for it.
         max_worker_restarts: consecutive failures of one worker before the env gives up and raises.
     """
@@ -72,7 +79,7 @@ class BotaVecEnv(VectorEnv):
     metadata = {"render_modes": [], "autoreset_mode": AutoresetMode.NEXT_STEP}
 
     def __init__(self, num_envs: int = 1, task: Task | None = None, *, workers: int | None = None,
-                 frame_skip: int = 4, probe: bool | None = None, record: bool = False,
+                 frame_skip: int = 4, probe: bool | None = None, obs: str = "v1", record: bool = False,
                  autoreset_mode: AutoresetMode = AutoresetMode.NEXT_STEP, profile: str = "lean",
                  det_math: bool = True, game_dir: str | os.PathLike | None = None, allow_unpinned: bool = False,
                  console_faults: str = "error", step_timeout: float = 30.0, init_timeout: float = 120.0,
@@ -94,7 +101,7 @@ class BotaVecEnv(VectorEnv):
             raise ValueError(f"task {self.task.name!r} needs the probe, but probe=False was passed")
         n_workers = min(self.num_envs, os.cpu_count() or 1) if workers is None else int(workers)
         config = {
-            "frameSkip": int(frame_skip), "record": bool(record), "probe": want_probe, "profile": profile,
+            "frameSkip": int(frame_skip), "record": bool(record), "probe": want_probe, "obs": obs, "profile": profile,
             "detMath": bool(det_math), "gameDir": os.fspath(game_dir) if game_dir is not None else None,
             "allowUnpinned": bool(allow_unpinned), "consoleFaults": console_faults, "testHooks": bool(_test_hooks),
             "sharedCode": bool(shared_code),
@@ -113,7 +120,23 @@ class BotaVecEnv(VectorEnv):
 
         self.single_action_space = spaces.MultiDiscrete(list(P.ACTION_NVEC))
         self.action_space = batch_space(self.single_action_space, self.num_envs)
-        self.single_observation_space = spaces.Dict({"none": spaces.Box(0, 0, shape=(1,), dtype=np.uint8)})
+        #: Layout of the observation as the Node side defines it: fields (name, dtype, shape, columns), vocab,
+        #: reviewed content. `obs_columns[field]` names the last axis of a field, `obs_vocab[name]` lists what
+        #: the type indices mean (index 0 is always "none").
+        self.obs_layout: dict[str, Any] = info["obs"]
+        self.obs_columns: dict[str, tuple[str, ...]] = {
+            f["name"]: tuple(f["columns"]) for f in self.obs_layout["fields"] if f.get("columns")}
+        self.obs_vocab: dict[str, tuple[str, ...]] = {k: tuple(v) for k, v in self.obs_layout.get("vocab", {}).items()}
+        self._obs_bytes = int(self.obs_layout["bytes"])
+        if self._obs_bytes:
+            self._obs_dtype = P.obs_dtype(self.obs_layout)
+            self.single_observation_space = spaces.Dict({
+                f["name"]: (spaces.Box(-np.inf, np.inf, shape=tuple(f["shape"]), dtype=np.float32) if f["dtype"] == "f4"
+                            else spaces.Box(0, 255, shape=tuple(f["shape"]), dtype=np.uint8))
+                for f in self.obs_layout["fields"]})
+        else:
+            self._obs_dtype = None
+            self.single_observation_space = spaces.Dict({"none": spaces.Box(0, 0, shape=(1,), dtype=np.uint8)})
         self.observation_space = batch_space(self.single_observation_space, self.num_envs)
 
         n = self.num_envs
@@ -123,9 +146,14 @@ class BotaVecEnv(VectorEnv):
             raise HarnessError(f"record size mismatch: worker {info['recordBytes']} bytes, Python {dtype.itemsize}")
         self._records = np.zeros(n, dtype=dtype)
         raw = self._records.view(np.uint8).reshape(n, dtype.itemsize)
-        self._views = [memoryview(raw[s]).cast("B") for s in self._pool.slices]
+        self._obs_raw = np.zeros((n, self._obs_bytes), dtype=np.uint8)
+        obs_views = [memoryview(self._obs_raw[s]).cast("B") for s in self._pool.slices] if self._obs_bytes else []
+        with_obs = (lambda rec_view, w: (rec_view, obs_views[w]) if self._obs_bytes else (rec_view,))
+        self._views = [with_obs(memoryview(raw[s]).cast("B"), w) for w, s in enumerate(self._pool.slices)]
+        # Reset replies go to scratch records: only the records of the environments being reset are taken over.
+        # Observations are read in place; a worker always holds the current observation of all its environments.
         self._scratch = [np.zeros(s.stop - s.start, dtype=dtype) for s in self._pool.slices]
-        self._scratch_views = [memoryview(x.view(np.uint8)).cast("B") for x in self._scratch]
+        self._scratch_views = [with_obs(memoryview(x.view(np.uint8)).cast("B"), w) for w, x in enumerate(self._scratch)]
         self._busy = False     # True while replies are outstanding; an interrupted exchange leaves it set
         self._needs_reset = np.ones(n, dtype=bool)
         self._scenarios: list[dict[str, Any] | None] = [None] * n
@@ -149,12 +177,27 @@ class BotaVecEnv(VectorEnv):
         return {
             "harness": info["harness"], "protocol": info["protocol"], "game": info["game"],
             "profile": info["profile"], "det_math": info["detMath"], "frame_skip": info["frameSkip"],
-            "node": info["node"], "obs": info["obs"], "events": list(self.event_names),
+            "node": info["node"], "obs": self._obs_summary(), "events": list(self.event_names),
             "probe": list(self.probe_names), "task": self.task.describe(),
             "shared_code": bool(self._pool.config.get("sharedCode")),
             "num_envs": self.num_envs, "workers": len(self._pool), "seed": self._base_seed,
             "autoreset_mode": self.autoreset_mode.value,
         }
+
+    def _obs_summary(self) -> dict[str, Any]:
+        """Identity of the observation (R9): id, version, size and a hash over fields and vocabularies."""
+        lay = self.obs_layout
+        canon = json.dumps({"fields": lay.get("fields"), "vocab": lay.get("vocab")}, sort_keys=True, separators=(",", ":"))
+        return {"id": lay["id"], "version": lay["version"], "bytes": lay["bytes"],
+                "layout_hash": hashlib.sha256(canon.encode()).hexdigest()[:16],
+                "reviewed": lay.get("reviewed", {})}
+
+    def _observation(self) -> dict[str, np.ndarray]:
+        """A fresh copy of the current observations, as {field: array of shape (num_envs, ...)}."""
+        if self._obs_dtype is None:
+            return {"none": np.zeros((self.num_envs, 1), dtype=np.uint8)}
+        block = self._obs_raw.copy().view(self._obs_dtype).reshape(self.num_envs)
+        return {name: block[name] for name in self._obs_dtype.names}
 
     @property
     def scenarios(self) -> list[dict[str, Any] | None]:
@@ -223,7 +266,7 @@ class BotaVecEnv(VectorEnv):
                 faults[i] = f
             info["fault"] = faults
             info["_fault"] = np.array([f is not None for f in faults])
-        return {"none": np.zeros((self.num_envs, 1), dtype=np.uint8)}, info
+        return self._observation(), info
 
     def _draw_scenario(self, i: int, override: Scenario | None) -> dict[str, Any]:
         source = override if override is not None else self.task.scenario(self._rngs[i], i, int(self._episode_index[i]))
@@ -468,7 +511,7 @@ class BotaVecEnv(VectorEnv):
                 mask[i] = True
             info["fault"] = faults
             info["_fault"] = mask
-        return {"none": np.zeros((self.num_envs, 1), dtype=np.uint8)}, reward, terminated, truncated, info
+        return self._observation(), reward, terminated, truncated, info
 
     # ---- faults -------------------------------------------------------------------------------------------
     def _log_fault(self, i: int, fault: dict[str, Any]) -> None:
@@ -500,6 +543,7 @@ class BotaVecEnv(VectorEnv):
             rec["flags"][i] = P.FLAG_TRUNCATED | P.FLAG_FAULT
             rec["reason"][i] = P.REASON_FAULT
             rec["events"][i] = 0.0
+            self._obs_raw[i] = 0          # like after a game fault: nothing trustworthy to show
             self._needs_reset[i] = True
             sc = self._scenarios[i] or {}
             fault = {"kind": failure.kind, "message": str(failure), "worker": w, "pid": old_pid, "stderr": stderr or None,

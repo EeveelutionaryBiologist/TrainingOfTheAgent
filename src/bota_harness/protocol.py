@@ -9,14 +9,14 @@ import struct
 
 import numpy as np
 
-PROTOCOL = 1
+PROTOCOL = 2
 
 OP_INIT, OP_RESET, OP_STEP, OP_CALL, OP_TRANSCRIPT, OP_CLOSE, OP_STATS = 1, 2, 3, 4, 5, 6, 7
 
 FLAG_TERMINATED, FLAG_TRUNCATED, FLAG_FAULT, FLAG_RESET, FLAG_RESET_FAILED = 1, 2, 4, 8, 16
 
 #: Why an episode ended; `info["reason"]` holds indices into this tuple.
-REASONS = ("none", "death", "cycle_end", "room_clear", "boss_kill", "floor_exit", "time_limit", "fault")
+REASONS = ("none", "death", "cycle_end", "room_clear", "boss_kill", "floor_exit", "time_limit", "fault", "unreviewed")
 REASON_FAULT = REASONS.index("fault")
 
 #: The action heads: move (none + 8 directions), shoot (none + 4), Force Push, active item.
@@ -45,3 +45,12 @@ def record_dtype(n_events: int, n_probe: int) -> np.dtype:
         offsets.append(RECORD_HEAD_BYTES + 4 * n_events)
     return np.dtype({"names": names, "formats": formats, "offsets": offsets,
                      "itemsize": RECORD_HEAD_BYTES + 4 * (n_events + n_probe)})
+
+
+def obs_dtype(layout: dict) -> np.dtype:
+    """Structured dtype of one observation block, from the layout the worker reports (js/core/observe.js)."""
+    kinds = {"f4": "<f4", "u1": "u1"}
+    fields = layout["fields"]
+    return np.dtype({"names": [f["name"] for f in fields],
+                     "formats": [(kinds[f["dtype"]], tuple(f["shape"])) for f in fields],
+                     "offsets": [f["offset"] for f in fields], "itemsize": layout["bytes"]})

@@ -42,6 +42,7 @@ class Worker:
         # Fixed parts of the hot path: a STEP request without resets, and the reply head of an uneventful step
         self._step_head = P.HEAD.pack(P.HEAD_BYTES - 4 + 4 * k, P.OP_STEP, 4 * k)
         self._plain_reply = b""
+        self._plain_total = -1
         self._stderr = None
         self._poll = None
         self._rfd = self._wfd = -1
@@ -79,6 +80,7 @@ class Worker:
             raise WorkerStartError(f"worker speaks protocol {self.info.get('protocol')}, this package {P.PROTOCOL}")
         n = self.k * (int(self.info["recordBytes"]) + int(self.info["obs"]["bytes"]))
         self._plain_reply = P.HEAD.pack(P.HEAD_BYTES - 4 + n, 0, n)
+        self._plain_total = P.HEAD_BYTES + n
         return self.info
 
     @property
@@ -208,15 +210,16 @@ class Worker:
         except (BrokenPipeError, OSError) as err:
             raise WorkerCrashed(f"worker {self.index} is gone ({err})") from err
 
-    def recv_step(self, deadline: float, spin_until: float, view: memoryview) -> Any:
-        """Reply to a STEP or RESET: the binary part goes into `view`, the JSON part (rare) is returned.
+    def recv_step(self, deadline: float, spin_until: float, views: tuple[memoryview, ...]) -> Any:
+        """Reply to a STEP or RESET: the binary part goes into `views` (records, then observations), the JSON
+        part (rare) is returned.
 
         Busy-waits until `spin_until` before sleeping in poll(): a sleeping reader costs a wake-up per worker
         and step, which on power-saving CPUs is longer than the simulation itself."""
         monotonic = time.monotonic
         while True:
             try:
-                got = os.readv(self._rfd, (self._head_view, view))
+                got = os.readv(self._rfd, (self._head_view, *views))
                 break
             except BlockingIOError:
                 if monotonic() >= spin_until:
@@ -225,11 +228,11 @@ class Worker:
                 pass
             except OSError as err:
                 raise WorkerCrashed(f"worker {self.index}: read failed ({err})") from err
-        if got == P.HEAD_BYTES + len(view) and self._head == self._plain_reply:
+        if got == self._plain_total and self._head == self._plain_reply:
             return None
-        return self._recv_rest(got, deadline, view)
+        return self._recv_rest(got, deadline, views)
 
-    def _recv_rest(self, got: int, deadline: float, view: memoryview) -> Any:
+    def _recv_rest(self, got: int, deadline: float, views: tuple[memoryview, ...]) -> Any:
         """Everything recv_step's fast path does not cover: partial reads, a JSON part, error replies."""
         if got == 0:
             code = self.proc.poll() if self.proc else None
@@ -237,20 +240,34 @@ class Worker:
         if got < P.HEAD_BYTES:
             self._fill([self._head_view[got:]], deadline)
             got = P.HEAD_BYTES
-        spilled = got - P.HEAD_BYTES              # bytes after the head that already landed in `view`
+        spilled = got - P.HEAD_BYTES              # bytes after the head that already landed in `views`
+        expect = sum(len(v) for v in views)
         length, status, bin_len = P.HEAD.unpack(self._head)
         body = length - (P.HEAD_BYTES - 4)
-        if status == 0 and bin_len == len(view):
-            self._fill([view[spilled:]], deadline)
+        if status == 0 and bin_len == expect:
+            rest, skip = [], spilled
+            for v in views:
+                if skip >= len(v):
+                    skip -= len(v)
+                else:
+                    rest.append(v[skip:])
+                    skip = 0
+            self._fill(rest, deadline)
             tail = bytearray(body - bin_len)
             if not tail:
                 return None
             self._fill([memoryview(tail)], deadline)
             return json.loads(tail)
-        # Not the expected shape: what landed in `view` is the start of the payload, not records
+        # Not the expected shape: what landed in `views` is the start of the payload, not records
         payload = bytearray(max(body, spilled))
-        payload[:spilled] = view[:spilled]
-        view[:spilled] = bytes(spilled)
+        at = 0
+        for v in views:
+            n = min(len(v), spilled - at)
+            if n <= 0:
+                break
+            payload[at:at + n] = v[:n]
+            v[:n] = bytes(n)
+            at += n
         self._fill([memoryview(payload)[spilled:]], deadline)
         if status != 0:
             try:
@@ -258,7 +275,7 @@ class Worker:
             except ValueError:
                 err = {"error": payload[bin_len:].decode("utf-8", "replace")}
             raise WorkerRequestError(str(err.get("error")), err.get("name") or "Error", err.get("stack"))
-        raise WorkerRequestError(f"worker {self.index} sent {bin_len} binary bytes where {len(view)} were expected")
+        raise WorkerRequestError(f"worker {self.index} sent {bin_len} binary bytes where {expect} were expected")
 
     def request(self, op: int, tail: Any, timeout: float) -> Any:
         """Send a JSON-only request and return the JSON answer."""

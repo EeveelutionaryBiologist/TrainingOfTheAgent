@@ -12,14 +12,16 @@
  *   - recording: the key events of an episode, for replay (js/core/recorder.js)
  *   - privileged side channel (R12): event counters of the last decision (env.events) and control calls
  *     (env.call); neither is part of any observation
+ *   - fair observation (R7–R9, js/core/observe.js): written after reset and after every decision; if the room
+ *     holds something without a reviewed view, the episode ends as truncated with reason 'unreviewed'
  *
  * No Node dependencies: CommonJS module in Node, global `BotaEnv` in a browser page (after BotaSim, BotaScenario,
- * BotaEvents, BotaProbe and BotaControl).
+ * BotaEvents, BotaProbe, BotaControl and BotaObserve).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./sim.js'), require('./scenario.js'), require('./events.js'), require('./control.js'));
-  else root.BotaEnv = factory(root.BotaSim, root.BotaScenario, root.BotaEvents, root.BotaControl);
-})(typeof self !== 'undefined' ? self : this, function (S, Scenario, Events, Control) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./sim.js'), require('./scenario.js'), require('./events.js'), require('./control.js'), require('./observe.js'));
+  else root.BotaEnv = factory(root.BotaSim, root.BotaScenario, root.BotaEvents, root.BotaControl, root.BotaObserve);
+})(typeof self !== 'undefined' ? self : this, function (S, Scenario, Events, Control, Observe) {
   'use strict';
 
   const TRANSCRIPT_FORMAT = 1;
@@ -38,6 +40,8 @@
      *   flowLimit      max consecutive non-play frames before the episode is declared stuck (default 1200)
      *   meta           free-form description stored in transcripts (game version, profile, ...)
      *   testHooks      allow the fault-injection control calls (the harness's own tests only)
+     *   observe        'v1' (default) or 'none': which observation to produce. 'none' also switches the review
+     *                  gate off; use it only where nothing is fed to a model (benchmarks, reward development)
      * }
      */
     constructor(makeInstance, opts) {
@@ -51,7 +55,9 @@
       this.flowLimit = o.flowLimit || 1200;
       this.meta = o.meta || {};
       this.testHooks = !!o.testHooks;
+      this.observer = Observe.create(o.observe === undefined ? Observe.ID : o.observe);   // null for 'none'
       this.events = null;    // EventCounter of the current instance: events of the last decision
+      this.markFrame = -2;   // frame at which the observer last remembered positions
       this.inst = null;
       this.sim = null;
       this.broken = false;
@@ -95,6 +101,15 @@
         this._fault(ep, 'exception', err);
       }
       this._consoleCheck(ep);
+      if (this.observer) {
+        this.observer.reset();
+        const missing = this._observe(ep);
+        if (missing && !ep.fault) {
+          // What the scenario sets up is the caller's choice, so this is a configuration mistake, not bad luck
+          this.episode = null;
+          throw new Scenario.ScenarioError(`observation ${this.observer.layout.id} has no reviewed view for: ${missing.join(', ')}`);
+        }
+      }
       this.events.clear();    // setup (items given, rooms entered) is not the agent's doing
       ep.frame = ep.startFrame = sim.frame;
       ep.nonPlayFrames = 0;   // counted from the moment the agent has control
@@ -125,6 +140,7 @@
         S.applyAction(sim, move, shoot, push ? 1 : 0, active ? 1 : 0);
         ep.decisions++;
         for (let n = 0; n < this.frameSkip && !ep.done; n++) {
+          if (this.observer && n === this.frameSkip - 1) { this.observer.mark(sim.B); this.markFrame = sim.frame; }
           sim.step();
           ep.playFrames++;
           this._checkEnd(ep);
@@ -135,9 +151,38 @@
       }
       this._consoleCheck(ep);
       ep.frame = sim.frame;
+      if (this.observer) {
+        const missing = this._observe(ep);
+        if (missing && !ep.done) {
+          // Review gate: neither show the model something unchecked nor hide something a human would see
+          ep.done = ep.truncated = true; ep.reason = 'unreviewed';
+          ep.fault = {
+            kind: 'unreviewed', message: `no reviewed view for: ${missing.join(', ')}`, stack: null, what: missing,
+            frame: sim.frame, state: sim.B.game.state, seed: ep.scenario.seed, scenario: ep.scenario,
+          };
+        }
+      }
       if (ep.done) this._finish();
       return ep;
     }
+
+    /** Write the observation of the current frame; returns the unreviewed things in the room, or null */
+    _observe(ep) {
+      const obs = this.observer;
+      if (ep.fault) { obs.blank(); return null; }   // the game state cannot be trusted after a fault
+      try {
+        // Velocities need the positions of the frame before; without them everything counts as newly appeared
+        if (this.markFrame !== this.sim.frame - 1) obs.reset();
+        return obs.write(this.sim.B);
+      } catch (err) {
+        obs.blank();
+        this._fault(ep, 'exception', err);
+        return null;
+      }
+    }
+
+    /** The current observation as { field: typed array } (views into the observer's buffer), or null */
+    observation() { return this.observer ? this.observer.f : null; }
 
     /** Step through non-play states without touching the keyboard */
     _flow(ep) {
