@@ -338,3 +338,15 @@ To be measured properly on the training machine together with the rest (`bota-ha
 Left open: the four review questions at the end of the spec; views for the rest of the floor-1 roster, bosses,
 pedestals, Hallucination and Trojan (Phase 4).
 
+## Observation review (2026-11-18): version 2
+
+The user reviewed `docs/observation-spec.md`. Changes, all in `js/core/observe.js`; layout frozen as
+`schema/obs_v2.json`, 6,708 bytes per env; `v2` is the default everywhere and `v1` is no longer produced.
+
+| Question | Decision | Built |
+|---|---|---|
+| Secret-door crack | Observed: the game draws it for every hidden door, and a perfect player always spots it. REQUIREMENTS §3.3 changed accordingly. | `doors` gains a `crack` column. Test cross-checks it against the background bake. |
+| Passive items | Exposed as a list; whether the model gets it is the trainer's choice. Justified by the pickup banner, which names every item when `giveItem` runs. | `items` (64, indices into `vocab.passive_items`, pickup order), `item_mask`, `hud.items_total`. An unknown id goes to the review gate. |
+| List caps | Unchanged. | – |
+| Glitch flicker | Follow the screen. | The masks reproduce `hud.js glitchFor`, including the flicker in the last second, on the instance's clock (`Env` passes `host.clockMs` to `write`). Without a clock: masked for the whole glitch, as before. Test compares with the HUD's drawing frame by frame. |
+

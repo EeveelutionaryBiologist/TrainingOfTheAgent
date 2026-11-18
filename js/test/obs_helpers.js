@@ -21,14 +21,17 @@ function rows(arr, mask, field) {
 /** The observation of `env` (or of a bare observer's field map) as plain objects */
 function decode(f) {
   const vec = (name) => Object.fromEntries(FIELD[name].columns.map((c, i) => [c, f[name][i]]));
-  const doors = {};
+  const doors = {}, dc = FIELD.doors.columns;
   V.door_dirs.forEach((dir, d) => {
-    const at = d * 4;
-    doors[dir] = { present: f.doors[at], kind: V.door_kinds[f.doors[at + 1] - 1] || null, locked: f.doors[at + 2], closed: f.doors[at + 3] };
+    const door = Object.fromEntries(dc.map((c, i) => [c, f.doors[d * dc.length + i]]));
+    door.kind = V.door_kinds[door.kind - 1] || null;
+    doors[dir] = door;
   });
+  const items = [];
+  for (let i = 0; i < f.item_mask.length; i++) if (f.item_mask[i]) items.push(V.passive_items[f.items[i] - 1] || null);
   const mc = FIELD.minimap.columns;
   return {
-    player: vec('player'), hud: vec('hud'), doors,
+    player: vec('player'), hud: vec('hud'), doors, items,
     enemies: rows(f.enemies, f.enemy_mask, 'enemies'),
     shots: rows(f.shots, f.shot_mask, 'shots'),
     pickups: rows(f.pickups, f.pickup_mask, 'pickups'),

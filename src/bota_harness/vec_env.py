@@ -55,7 +55,7 @@ class BotaVecEnv(VectorEnv):
         workers: Node processes to spread the environments over; default min(num_envs, CPU count).
         frame_skip: play frames one decision is held for (R4).
         probe: include the raw state probe in `info` and hand it to the task. Default: only if the task needs it.
-        obs: "v1" (default), the fair observation, or "none". With "v1" an episode ends as truncated with reason
+        obs: "v2" (default), the fair observation, or "none". With "v2" an episode ends as truncated with reason
             "unreviewed" as soon as the room holds something the observation has no reviewed view for, and a
             scenario that sets such a thing up is refused with ScenarioError. "none" is for work where nothing is
             fed to a model (benchmarks, reward development).
@@ -79,7 +79,7 @@ class BotaVecEnv(VectorEnv):
     metadata = {"render_modes": [], "autoreset_mode": AutoresetMode.NEXT_STEP}
 
     def __init__(self, num_envs: int = 1, task: Task | None = None, *, workers: int | None = None,
-                 frame_skip: int = 4, probe: bool | None = None, obs: str = "v1", record: bool = False,
+                 frame_skip: int = 4, probe: bool | None = None, obs: str = "v2", record: bool = False,
                  autoreset_mode: AutoresetMode = AutoresetMode.NEXT_STEP, profile: str = "lean",
                  det_math: bool = True, game_dir: str | os.PathLike | None = None, allow_unpinned: bool = False,
                  console_faults: str = "error", step_timeout: float = 30.0, init_timeout: float = 120.0,

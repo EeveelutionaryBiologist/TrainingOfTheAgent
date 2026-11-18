@@ -125,8 +125,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--spin-wait", type=float, default=0.002)
     p.add_argument("--shared-code", action="store_true")
     p.add_argument("--probe", action="store_true")
-    p.add_argument("--obs", default="v1", choices=["v1", "none"],
-                   help="observation; with v1, full runs end as 'unreviewed' at the first unreviewed enemy")
+    p.add_argument("--obs", default="v2", choices=["v2", "none"],
+                   help="observation; with v2, full runs end as 'unreviewed' at the first unreviewed enemy")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_bench)

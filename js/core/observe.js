@@ -1,5 +1,5 @@
 /*
- * observe.js — the fair observation, version 1 (REQUIREMENTS §3.3, R7–R9). Spec: docs/observation-spec.md.
+ * observe.js — the fair observation, version 2 (REQUIREMENTS §3.3, R7–R9). Spec: docs/observation-spec.md.
  *
  * HARD RULE: the model never receives state a human player could not see on screen at that moment.
  * This file is therefore an ALLOWLIST. Every value it writes is produced by an explicit extractor that names the
@@ -13,10 +13,13 @@
  *
  * Kinematics are differences of displayed positions between the last two frames, never the engine's vx/vy.
  *
+ * One field is a memory of the screen rather than the screen of this frame: `items`, the passive items held, in
+ * pickup order. Every passive item reaches the player through Player.giveItem, which puts its name on screen in
+ * a banner. A trainer that wants the strict "this frame only" view drops the field.
+ *
  * Deliberately NOT observed (a human sees them, the model does not; safe, but a known gap):
- *   the crack that hints at a hidden door, banners, the item held overhead after a pickup, floating enemy text,
- *   projectile colour, particle effects, the passive item list (only on the pause screen, which the agent
- *   cannot open).
+ *   banners themselves, the item held overhead after a pickup, floating enemy text, projectile colour, particle
+ *   effects.
  *
  * No Node dependencies: CommonJS module in Node, global `BotaObserve` in a browser page.
  */
@@ -26,11 +29,11 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const ID = 'v1';
-  const VERSION = 1;
+  const ID = 'v2';
+  const VERSION = 2;
   const FPS = 60;
 
-  // ---- vocabularies (frozen for version 1; index 0 always means "none") -------------------------------------
+  // ---- vocabularies (frozen for version 2; index 0 always means "none") -------------------------------------
   // Entity types are the names of the sprites the game draws, so "type" is what is on screen by construction.
   const SPRITES = [
     'enemy_bug', 'enemy_null_pointer', 'enemy_memory_leak', 'enemy_leaklet',
@@ -43,6 +46,14 @@
   const DOOR_DIRS = ['up', 'right', 'down', 'left'];
   const PROP_KINDS = ['crate', 'bush', 'package', 'carton', 'sandcastle'];
   const ACTIVE_ITEMS = ['regenerate_response', 'stop_generating', 'rm_rf', 'compact', 'ctrl_z'];
+  const PASSIVE_ITEMS = ['cold_brew', 'extra_gpu', 'offbrand_gpu', 'mech_keyboard', 'stack_overflow', 'context_window',
+    'prompt_caching', 'tab_completion', 'max_effort', 'monorepo', 'kubernetes', 'blockchain', 'technical_debt',
+    'temperature', 'few_shot', 'regex', 'chain_of_thought', 'confident_hallucination', 'linter', 'dark_mode',
+    'microservices', 'vibe_coding', 'the_cloud', 'rlhf', 'long_term_support', 'swap_file', 'electron_app',
+    'reserved_instances', 'graceful_degradation', 'calculator', 'deep_packet_inspection', 'von_neumann',
+    'sharp_left_turn', 'to_the_moon', 'constitutional_guardrails', 'retry_backoff', 'code_review', 'daily_standup',
+    'lgtm', 'off_by_one', 'yaml_config', 'git_blame', 'rubber_duck', 'unit_tests', 'copy_paste', 'on_call_pager',
+    'garbage_collector', 'seed_funding', 'benchmark_overfitting', 'feature_flag'];
   const BOSSES = ['monolith', 'stakeholder', 'friday_deploy', 'infinite_loop', 'rogue_swarm', 'agent_swarm', 'reviewer',
     'octopus_merge', 'nested_loop', 'megalith', 'shareholder', 'memory_hog', 'ransomware', 'system_prompt'];
   const MAP_ICONS = ['boss', 'treasure', 'shop', 'secret', 'terms'];
@@ -63,7 +74,7 @@
   };
 
   // ---- layout -------------------------------------------------------------------------------------------------
-  const CAP = { enemies: 32, shots: 96, pickups: 16 };
+  const CAP = { enemies: 32, shots: 96, pickups: 16, items: 64 };
   const MAP_W = 7, MAP_H = 5;      // the minimap window, as in hud.js
   const COLS = 15, ROWS = 9;
 
@@ -74,11 +85,11 @@
     'active_visible', 'active_item', 'active_charge', 'active_max',
     'lock_active', 'lock_pushes', 'lock_fire'];
   const HUD = ['depth', 'clock', 'minimap_visible', 'boss_bar', 'boss_type', 'boss_ratio', 'boss_side_quest',
-    'enemies_total', 'shots_total', 'pickups_total'];
+    'enemies_total', 'shots_total', 'pickups_total', 'items_total'];
   const ENEMY = ['type', 'x', 'y', 'vx', 'vy', 'fresh', 'r', 'scale', 'alpha', 'flip', 'flash', 'frozen', 'flying', 'hp_shown', 'hp_ratio'];
   const SHOT = ['type', 'x', 'y', 'vx', 'vy', 'fresh', 'r', 'urgent'];
   const PICKUP = ['type', 'x', 'y', 'vx', 'vy', 'fresh', 'r', 'alpha', 'price'];
-  const DOOR = ['present', 'kind', 'locked', 'closed'];
+  const DOOR = ['present', 'kind', 'locked', 'closed', 'crack'];
   const MINIMAP = ['state', 'icon', 'link_up', 'link_right', 'link_down', 'link_left', 'scan', 'scan_edge'];
 
   // Order matters only inside each dtype group; floats come first so every float field is 4-byte aligned.
@@ -96,6 +107,8 @@
     { name: 'enemy_mask', dtype: 'u1', shape: [CAP.enemies] },
     { name: 'shot_mask', dtype: 'u1', shape: [CAP.shots] },
     { name: 'pickup_mask', dtype: 'u1', shape: [CAP.pickups] },
+    { name: 'items', dtype: 'u1', shape: [CAP.items] },
+    { name: 'item_mask', dtype: 'u1', shape: [CAP.items] },
   ];
   const SIZE = { f4: 4, u1: 1 };
   let BYTES = 0;
@@ -111,7 +124,7 @@
     fields: FIELDS.map((f) => ({ name: f.name, dtype: f.dtype, shape: f.shape, offset: f.offset, columns: f.columns || null })),
     vocab: {
       sprites: SPRITES, door_kinds: DOOR_KINDS, door_dirs: DOOR_DIRS, prop_kinds: PROP_KINDS, active_items: ACTIVE_ITEMS,
-      bosses: BOSSES, map_icons: MAP_ICONS, scan_types: SCAN_TYPES, tile_classes: TILE_CLASSES, facings: FACINGS,
+      passive_items: PASSIVE_ITEMS, bosses: BOSSES, map_icons: MAP_ICONS, scan_types: SCAN_TYPES, tile_classes: TILE_CLASSES, facings: FACINGS,
       map_states: ['none', 'seen', 'visited', 'current'],
     },
     reviewed: { enemies: Object.keys(ENEMIES), projectiles: ['Projectile', 'Bomb'], pickups: ['Pickup', 'Trapdoor', 'Pipe'], props: PROP_KINDS, familiars: [] },
@@ -121,6 +134,7 @@
   const index1 = (list, name) => list.indexOf(name) + 1;   // 0 = not in the vocabulary
   // The same lookups, prepared for the per-decision path
   const SPRITE_INDEX = new Map(SPRITES.map((n, i) => [n, i + 1]));
+  const PASSIVE_INDEX = new Map(PASSIVE_ITEMS.map((n, i) => [n, i + 1]));
   const ENEMY_VIEW = new Map(Object.keys(ENEMIES).map((id) => [id, { sprite: ENEMIES[id].sprite, type: SPRITES.indexOf(ENEMIES[id].sprite) + 1 }]));
   const T_BOMB = SPRITES.indexOf('bomb') + 1, T_SHOT_PLAYER = SPRITES.indexOf('shot_player') + 1, T_SHOT_ENEMY = SPRITES.indexOf('shot_enemy') + 1;
   const T_TRAPDOOR = SPRITES.indexOf('trapdoor') + 1, T_PIPE = SPRITES.indexOf('pipe') + 1, T_CHEST_OPEN = SPRITES.indexOf('pickup_chest_open') + 1;
@@ -155,12 +169,25 @@
     }
     for (const id of ACTIVE_ITEMS) if (!B.ITEMS[id] || !B.ITEMS[id].active) problems.push(`active item "${id}" does not exist`);
     for (const id of Object.keys(B.ITEMS)) if (B.ITEMS[id].active && !ACTIVE_ITEMS.includes(id)) problems.push(`active item "${id}" is not in the vocabulary`);
+    for (const id of PASSIVE_ITEMS) if (!B.ITEMS[id] || B.ITEMS[id].active) problems.push(`passive item "${id}" does not exist`);
+    for (const id of Object.keys(B.ITEMS)) if (!B.ITEMS[id].active && !PASSIVE_INDEX.has(id)) problems.push(`passive item "${id}" is not in the vocabulary`);
     for (const id of Object.keys(B.BOSSES)) if (!BOSSES.includes(id)) problems.push(`boss "${id}" is not in the vocabulary`);
     for (const k of Object.keys(B.PROP_KINDS || {})) if (!PROP_KINDS.includes(k)) problems.push(`prop kind "${k}" is not in the vocabulary`);
     const T = B.TILES;
     TILE_CLASSES.forEach((name, i) => { if (T[name.toUpperCase()] !== i) problems.push(`tile class "${name}" is not ${i}`); });
     if (B.C.COLS !== COLS || B.C.ROWS !== ROWS) problems.push('room size differs');
     if (problems.length) throw new Error(`[observe ${ID}] the game differs from the reviewed version: ${problems.join('; ')}`);
+  }
+
+  /**
+   * The HUD area scrambled on this frame, or null: exactly hud.js glitchFor. In its last second the glitch
+   * flickers on the HUD's clock (performance.now() / 1000, ten half-periods a second), and a human reads the
+   * values in the gaps, so they are observed there too.
+   */
+  function glitchedArea(gl, clockMs) {
+    if (!gl || !(gl.t > 0)) return null;
+    if (gl.t < 1 && clockMs !== undefined && Math.floor((clockMs / 1000) * 10) % 2) return null;
+    return gl.kind;
   }
 
   class Observer {
@@ -240,8 +267,10 @@
     /**
      * Write the observation of the current frame. Returns null, or the list of things in the room that have no
      * reviewed view (they are left out of the observation; the caller must end the episode).
+     * clockMs: what the game's performance.now() returns while this frame is drawn. The HUD flickers a fading
+     * Graphics Glitch on that clock; without it the glitched area is masked for the whole glitch.
      */
-    write(B) {
+    write(B, clockMs) {
       if (!this.verified.has(B)) { verifyGame(B); this.verified.add(B); }
       const g = B.game, room = g.room, p = g.player;
       this.raw.fill(0);
@@ -249,7 +278,7 @@
       this.missing = null;
       const sameRoom = this.prevRoom === room;
       const f = this.f;
-      const glitch = g.hudGlitch && g.hudGlitch.t > 0 ? g.hudGlitch.kind : null;   // hud.js glitchFor; masked for the whole duration
+      const glitch = glitchedArea(g.hudGlitch, clockMs);
 
       // ---- room: tiles and doors (renderer.js bakeBackground, drawObstacle, drawProps, drawDoor) ----
       const T = B.TILES, tiles = f.tiles;
@@ -257,9 +286,14 @@
       for (let d = 0; d < 4; d++) {
         const dir = DOOR_DIRS[d], door = room.doors[dir], dt = B.C.DOOR_TILES[dir];
         const ti = dt.row * COLS + dt.col;
-        if (!door || door.edge.hidden) { tiles[ti] = T.WALL; continue; }   // a hidden door is drawn as wall
-        tiles[ti] = T.DOOR;
         const at = d * DOOR.length;
+        if (!door) { tiles[ti] = T.WALL; continue; }
+        if (door.edge.hidden) {                       // drawn as wall, with a crack on it (renderer.js bakeBackground)
+          tiles[ti] = T.WALL;
+          f.doors[at + D.crack] = 1;
+          continue;
+        }
+        tiles[ti] = T.DOOR;
         f.doors[at + D.present] = 1;
         f.doors[at + D.kind] = index1(DOOR_KINDS, door.edge.kind) || 1;   // unknown kinds are drawn in the normal style
         f.doors[at + D.locked] = door.edge.locked ? 1 : 0;                // padlock and chain
@@ -312,12 +346,22 @@
           }
         }
       }
+      // passive items held, in pickup order: each was named on screen by giveItem's banner (player.js giveItem)
+      const held = p.items;
+      let nItems = 0;
+      for (let i = 0; i < held.length; i++) {
+        const type = PASSIVE_INDEX.get(held[i]);
+        if (!type) { this._flag(`item:${held[i]}`); continue; }
+        if (nItems < CAP.items) { f.items[nItems] = type; f.item_mask[nItems] = 1; }
+        nItems++;
+      }
       const enc = p.encrypted || {};                 // drawEncrypted: stamps over the locked areas
       pl[P.lock_active] = enc.active ? 1 : 0; pl[P.lock_pushes] = enc.pushes ? 1 : 0; pl[P.lock_fire] = enc.fire ? 1 : 0;
 
       const hud = f.hud;
       hud[H.depth] = g.depth;                                              // drawFloorLabel "FLOOR n"
       hud[H.clock] = Math.floor((g.runStats && g.runStats.time) || 0);     // drawFloorLabel mm:ss
+      hud[H.items_total] = nItems;
 
       // ---- boss bar (hud.js drawBossBar) ----
       let boss = null;
@@ -476,5 +520,5 @@
   const NONE = { id: 'none', version: 0, bytes: 0, fields: [], vocab: {}, reviewed: {} };
   const describe = (id) => (id === ID ? LAYOUT : NONE);
 
-  return { create, describe, Observer, LAYOUT, NONE, ID, VERSION, BYTES, verifyGame };
+  return { create, describe, Observer, LAYOUT, NONE, ID, VERSION, BYTES, verifyGame, glitchedArea };
 });

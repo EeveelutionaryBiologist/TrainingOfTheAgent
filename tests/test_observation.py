@@ -13,7 +13,7 @@ import pytest
 from bota_harness import REASONS, Player, ReferenceTask, ScenarioError, ScenarioTask, TestRoom
 from conftest import noop, random_actions
 
-SCHEMA = json.loads((Path(__file__).resolve().parents[1] / "schema" / "obs_v1.json").read_text())
+SCHEMA = json.loads((Path(__file__).resolve().parents[1] / "schema" / "obs_v2.json").read_text())
 
 
 def col(env, field, name):
@@ -24,7 +24,7 @@ def test_layout_is_the_frozen_schema_and_shapes_the_space(make_env, endless_task
     env = make_env(3, endless_task, workers=2)
     assert env.obs_layout == SCHEMA
     d = env.describe()["obs"]
-    assert (d["id"], d["version"], d["bytes"]) == ("v1", 1, SCHEMA["bytes"]) and len(d["layout_hash"]) == 16
+    assert (d["id"], d["version"], d["bytes"]) == ("v2", 2, SCHEMA["bytes"]) and len(d["layout_hash"]) == 16
     assert d["reviewed"]["enemies"] == ["bug", "null_pointer", "memory_leak", "leaklet"]
     obs, _ = env.reset(seed=0)
     assert list(obs) == [f["name"] for f in SCHEMA["fields"]]
@@ -58,6 +58,21 @@ def test_values_match_the_game_and_each_step_returns_fresh_arrays(make_env, endl
     assert not np.shares_memory(kept[0]["player"], kept[1]["player"]) and not np.array_equal(kept[0]["player"], kept[-1]["player"])
     snap = env.snapshot(1)
     assert obs["player"][1, col(env, "player", "x")] == np.float32(snap["player"]["x"])
+
+
+def test_held_items_and_door_cracks_arrive_decoded(make_env):
+    items = ("cold_brew", "linter", "regex")
+    env = make_env(2, ScenarioTask(TestRoom(enemies=("bug",), end_on=(), player=Player(god=True, items=items))), workers=1)
+    obs, _ = env.reset(seed=5)
+    vocab = env.obs_vocab["passive_items"]
+    for i in range(2):
+        held = [vocab[k - 1] for k, m in zip(obs["items"][i], obs["item_mask"][i]) if m]
+        assert held == list(items)
+        assert obs["hud"][i, col(env, "hud", "items_total")] == 3
+    assert env.single_observation_space["items"].shape == (64,)
+    assert env.obs_columns["doors"] == ("present", "kind", "locked", "closed", "crack")
+    crack, present = col(env, "doors", "crack"), col(env, "doors", "present")
+    assert not (obs["doors"][..., crack] & obs["doors"][..., present]).any(), "a crack is only ever on a wall, never on a door"
 
 
 def test_observations_do_not_depend_on_the_process_layout(make_env):

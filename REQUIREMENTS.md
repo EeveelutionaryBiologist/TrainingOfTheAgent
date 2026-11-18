@@ -1,6 +1,6 @@
 # Training of the Agent — Requirements
 
-Last edited: 2026-11-11. 
+Last edited: 2026-11-18. 
 
 This document records what we want to build, the constraints, and what is still open.
 It covers requirements and the choice of approach, not the detailed design.
@@ -63,14 +63,14 @@ Known cases that need care:
 |---|---|---|
 | Hallucination | an enemy | a pickup of its disguise type, until it is revealed |
 | Trojan | an enemy | a prop of its disguise kind, until it is revealed |
-| Secret rooms | hidden door edges and room cells | nothing, until the door has been blown open |
+| Secret rooms | hidden door edges and room cells | the crack the game draws on the wall over a hidden door; nothing else until the door has been blown open |
 | Floor map | every room of the floor | only what the minimap shows (seen and visited rooms; more after README.md or a map item) |
 | Enemy health | exact values | only when the Code Review item draws health bars; the boss bar is always visible |
-| Graphics Glitch | intact HUD values | the scrambled HUD area is masked while the glitch lasts |
+| Graphics Glitch | intact HUD values | the scrambled HUD area is masked on exactly the frames it is scrambled (including the flicker as it ends) |
 | Enemy internals | timers, scratch state, planned attacks | only the telegraphs that are drawn |
 | Pedestals and Terms of Service | item id, contract clause | what is drawn; the contract only once it is readable on screen |
 | RNG state, seed, planned contents of other rooms | all present in memory | never |
-| Potentially: Inventory | items, their effect & fluff | This information -only- if the inventory is open | 
+| Inventory | passive items held, their effects | the list of items held, since each one was named on screen by its pickup banner; offered to the trainer, not required |
 
 Consequences:
 
@@ -206,3 +206,4 @@ Potentially, the environmental harness should be moved to it's own repository
 | 2026-11-11 | Structured-state observation first. Fair-observation rule is a hard requirement. |
 | 2026-11-11 | Goal 0 and Goal 1 defined as in §2. |
 | 2026-11-11 | Human demonstrations shelved. |
+| 2026-11-18 | Observation review: the secret-door crack is observed; the passive item list is exposed (optional for the model); the glitch mask follows the screen frame by frame; list caps stay. Observation version 2. |

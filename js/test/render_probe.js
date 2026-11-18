@@ -48,6 +48,17 @@ function drawRoom(B) {
   return record(B, (ctx) => B.Renderer.drawRoom(ctx, room, g, true));
 }
 
+/** What the static background bake of the current room draws (walls, decor, the cracks over hidden doors) */
+function bakeRoom(B) {
+  const g = B.game, room = g.room;
+  const { ctx, calls } = recordingContext();
+  const saved = { bgCanvas: room.bgCanvas, bgDirty: room.bgDirty, bgScale: room.bgScale };
+  room.bgCanvas = { width: 0, height: 0, getContext: () => ctx };
+  room.bgDirty = true;
+  try { record(B, (c) => B.Renderer.drawRoom(c, room, g, true)); } finally { Object.assign(room, saved); }
+  return { calls };
+}
+
 /** What HUD.draw draws */
 function drawHud(B) {
   return record(B, (ctx) => B.HUD.draw(ctx, B.game));
@@ -105,4 +116,4 @@ function minimapFromHud(hud) {
   return { cells, links, edgeDots, static: noise };
 }
 
-module.exports = { recordingContext, record, drawRoom, drawHud, minimapFromHud, MAP };
+module.exports = { recordingContext, record, drawRoom, bakeRoom, drawHud, minimapFromHud, MAP };

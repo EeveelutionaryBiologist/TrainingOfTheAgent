@@ -1,0 +1,424 @@
+{
+ "id": "v2",
+ "version": 2,
+ "bytes": 6708,
+ "fields": [
+  {
+   "name": "player",
+   "dtype": "f4",
+   "shape": [
+    29
+   ],
+   "offset": 0,
+   "columns": [
+    "x",
+    "y",
+    "vx",
+    "vy",
+    "fresh",
+    "facing",
+    "invulnerable",
+    "floating",
+    "hearts_visible",
+    "health",
+    "max_health",
+    "guardrails",
+    "credits",
+    "pushes",
+    "approvals",
+    "stats_visible",
+    "damage",
+    "fire_rate",
+    "speed",
+    "range",
+    "shot_speed",
+    "luck",
+    "active_visible",
+    "active_item",
+    "active_charge",
+    "active_max",
+    "lock_active",
+    "lock_pushes",
+    "lock_fire"
+   ]
+  },
+  {
+   "name": "hud",
+   "dtype": "f4",
+   "shape": [
+    11
+   ],
+   "offset": 116,
+   "columns": [
+    "depth",
+    "clock",
+    "minimap_visible",
+    "boss_bar",
+    "boss_type",
+    "boss_ratio",
+    "boss_side_quest",
+    "enemies_total",
+    "shots_total",
+    "pickups_total",
+    "items_total"
+   ]
+  },
+  {
+   "name": "enemies",
+   "dtype": "f4",
+   "shape": [
+    32,
+    15
+   ],
+   "offset": 160,
+   "columns": [
+    "type",
+    "x",
+    "y",
+    "vx",
+    "vy",
+    "fresh",
+    "r",
+    "scale",
+    "alpha",
+    "flip",
+    "flash",
+    "frozen",
+    "flying",
+    "hp_shown",
+    "hp_ratio"
+   ]
+  },
+  {
+   "name": "shots",
+   "dtype": "f4",
+   "shape": [
+    96,
+    8
+   ],
+   "offset": 2080,
+   "columns": [
+    "type",
+    "x",
+    "y",
+    "vx",
+    "vy",
+    "fresh",
+    "r",
+    "urgent"
+   ]
+  },
+  {
+   "name": "pickups",
+   "dtype": "f4",
+   "shape": [
+    16,
+    9
+   ],
+   "offset": 5152,
+   "columns": [
+    "type",
+    "x",
+    "y",
+    "vx",
+    "vy",
+    "fresh",
+    "r",
+    "alpha",
+    "price"
+   ]
+  },
+  {
+   "name": "tiles",
+   "dtype": "u1",
+   "shape": [
+    9,
+    15
+   ],
+   "offset": 5728,
+   "columns": null
+  },
+  {
+   "name": "tile_prop",
+   "dtype": "u1",
+   "shape": [
+    9,
+    15
+   ],
+   "offset": 5863,
+   "columns": null
+  },
+  {
+   "name": "tile_damaged",
+   "dtype": "u1",
+   "shape": [
+    9,
+    15
+   ],
+   "offset": 5998,
+   "columns": null
+  },
+  {
+   "name": "doors",
+   "dtype": "u1",
+   "shape": [
+    4,
+    5
+   ],
+   "offset": 6133,
+   "columns": [
+    "present",
+    "kind",
+    "locked",
+    "closed",
+    "crack"
+   ]
+  },
+  {
+   "name": "minimap",
+   "dtype": "u1",
+   "shape": [
+    5,
+    7,
+    8
+   ],
+   "offset": 6153,
+   "columns": [
+    "state",
+    "icon",
+    "link_up",
+    "link_right",
+    "link_down",
+    "link_left",
+    "scan",
+    "scan_edge"
+   ]
+  },
+  {
+   "name": "enemy_mask",
+   "dtype": "u1",
+   "shape": [
+    32
+   ],
+   "offset": 6433,
+   "columns": null
+  },
+  {
+   "name": "shot_mask",
+   "dtype": "u1",
+   "shape": [
+    96
+   ],
+   "offset": 6465,
+   "columns": null
+  },
+  {
+   "name": "pickup_mask",
+   "dtype": "u1",
+   "shape": [
+    16
+   ],
+   "offset": 6561,
+   "columns": null
+  },
+  {
+   "name": "items",
+   "dtype": "u1",
+   "shape": [
+    64
+   ],
+   "offset": 6577,
+   "columns": null
+  },
+  {
+   "name": "item_mask",
+   "dtype": "u1",
+   "shape": [
+    64
+   ],
+   "offset": 6641,
+   "columns": null
+  }
+ ],
+ "vocab": {
+  "sprites": [
+   "enemy_bug",
+   "enemy_null_pointer",
+   "enemy_memory_leak",
+   "enemy_leaklet",
+   "shot_player",
+   "shot_enemy",
+   "bomb",
+   "pickup_heart_half",
+   "pickup_heart",
+   "pickup_guardrail",
+   "pickup_credit",
+   "pickup_credit5",
+   "pickup_push",
+   "pickup_push2",
+   "pickup_approval",
+   "pickup_chest",
+   "pickup_readme",
+   "pickup_chest_locked",
+   "pickup_chest_open",
+   "trapdoor",
+   "pipe"
+  ],
+  "door_kinds": [
+   "normal",
+   "boss",
+   "treasure",
+   "shop",
+   "terms",
+   "secret"
+  ],
+  "door_dirs": [
+   "up",
+   "right",
+   "down",
+   "left"
+  ],
+  "prop_kinds": [
+   "crate",
+   "bush",
+   "package",
+   "carton",
+   "sandcastle"
+  ],
+  "active_items": [
+   "regenerate_response",
+   "stop_generating",
+   "rm_rf",
+   "compact",
+   "ctrl_z"
+  ],
+  "passive_items": [
+   "cold_brew",
+   "extra_gpu",
+   "offbrand_gpu",
+   "mech_keyboard",
+   "stack_overflow",
+   "context_window",
+   "prompt_caching",
+   "tab_completion",
+   "max_effort",
+   "monorepo",
+   "kubernetes",
+   "blockchain",
+   "technical_debt",
+   "temperature",
+   "few_shot",
+   "regex",
+   "chain_of_thought",
+   "confident_hallucination",
+   "linter",
+   "dark_mode",
+   "microservices",
+   "vibe_coding",
+   "the_cloud",
+   "rlhf",
+   "long_term_support",
+   "swap_file",
+   "electron_app",
+   "reserved_instances",
+   "graceful_degradation",
+   "calculator",
+   "deep_packet_inspection",
+   "von_neumann",
+   "sharp_left_turn",
+   "to_the_moon",
+   "constitutional_guardrails",
+   "retry_backoff",
+   "code_review",
+   "daily_standup",
+   "lgtm",
+   "off_by_one",
+   "yaml_config",
+   "git_blame",
+   "rubber_duck",
+   "unit_tests",
+   "copy_paste",
+   "on_call_pager",
+   "garbage_collector",
+   "seed_funding",
+   "benchmark_overfitting",
+   "feature_flag"
+  ],
+  "bosses": [
+   "monolith",
+   "stakeholder",
+   "friday_deploy",
+   "infinite_loop",
+   "rogue_swarm",
+   "agent_swarm",
+   "reviewer",
+   "octopus_merge",
+   "nested_loop",
+   "megalith",
+   "shareholder",
+   "memory_hog",
+   "ransomware",
+   "system_prompt"
+  ],
+  "map_icons": [
+   "boss",
+   "treasure",
+   "shop",
+   "secret",
+   "terms"
+  ],
+  "scan_types": [
+   "boss",
+   "secret"
+  ],
+  "tile_classes": [
+   "floor",
+   "wall",
+   "rock",
+   "block",
+   "pit",
+   "spikes",
+   "door",
+   "prop",
+   "cactus"
+  ],
+  "facings": [
+   "up",
+   "down",
+   "left",
+   "right"
+  ],
+  "map_states": [
+   "none",
+   "seen",
+   "visited",
+   "current"
+  ]
+ },
+ "reviewed": {
+  "enemies": [
+   "bug",
+   "null_pointer",
+   "memory_leak",
+   "leaklet"
+  ],
+  "projectiles": [
+   "Projectile",
+   "Bomb"
+  ],
+  "pickups": [
+   "Pickup",
+   "Trapdoor",
+   "Pipe"
+  ],
+  "props": [
+   "crate",
+   "bush",
+   "package",
+   "carton",
+   "sandcastle"
+  ],
+  "familiars": []
+ },
+ "units": "positions in room pixels (960 x 576, origin top left), velocities in pixels per second, health in half hearts"
+}

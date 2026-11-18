@@ -33,7 +33,7 @@
  * The event counters and the probe are PRIVILEGED (reward side, debugging).
  *
  * After the K records come K observation blocks of obs.bytes each (js/core/observe.js; INIT's `obs` selects
- * 'v1' or 'none', and the INIT reply carries the full layout). This is the only part meant for a model.
+ * 'v2' or 'none', and the INIT reply carries the full layout). This is the only part meant for a model.
  */
 'use strict';
 

@@ -40,7 +40,7 @@
      *   flowLimit      max consecutive non-play frames before the episode is declared stuck (default 1200)
      *   meta           free-form description stored in transcripts (game version, profile, ...)
      *   testHooks      allow the fault-injection control calls (the harness's own tests only)
-     *   observe        'v1' (default) or 'none': which observation to produce. 'none' also switches the review
+     *   observe        'v2' (default) or 'none': which observation to produce. 'none' also switches the review
      *                  gate off; use it only where nothing is fed to a model (benchmarks, reward development)
      * }
      */
@@ -173,7 +173,7 @@
       try {
         // Velocities need the positions of the frame before; without them everything counts as newly appeared
         if (this.markFrame !== this.sim.frame - 1) obs.reset();
-        return obs.write(this.sim.B);
+        return obs.write(this.sim.B, this.sim.host ? this.sim.host.clockMs : undefined);   // the clock the HUD draws with
       } catch (err) {
         obs.blank();
         this._fault(ep, 'exception', err);

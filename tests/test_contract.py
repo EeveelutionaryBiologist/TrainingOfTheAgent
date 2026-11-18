@@ -22,7 +22,7 @@ def test_spaces_and_description(make_env):
     assert env.observation_space.contains(env.reset(seed=0)[0])
     d = env.describe()
     assert d["game"]["pinned"] is True and d["game"]["tag"] == "v1.0" and len(d["game"]["commit"]) == 40
-    assert (d["obs"]["id"], d["obs"]["version"]) == ("v1", 1), "the fair observation is the default"
+    assert (d["obs"]["id"], d["obs"]["version"]) == ("v2", 2), "the fair observation is the default"
     assert d["profile"] == "lean" and d["det_math"] is True and d["frame_skip"] == 4
     assert d["workers"] == 2 and d["num_envs"] == 3 and d["task"] == {"name": "none", "version": 0}
     assert d["seed"] is not None

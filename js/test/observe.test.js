@@ -1,5 +1,5 @@
 /*
- * Observation v1: the screen is the reference. These tests run the game's own drawing code against a recording
+ * Observation v2: the screen is the reference. These tests run the game's own drawing code against a recording
  * canvas (render_probe.js) and require the observation to say the same, and they change hidden state and require
  * the observation not to move.
  */
@@ -16,16 +16,16 @@ const { decode, bytes, L, V } = require('./obs_helpers.js');
 const near = (a, b, tol) => Math.abs(a - b) <= (tol === undefined ? 1e-3 : tol);
 const f32 = Math.fround;
 const obsOf = (env) => decode(env.observation());
-/** Write the observation of the current frame directly (no step), ignoring the review gate's verdict */
-const rewrite = (env) => { const missing = env.observer.write(env.B); return { o: obsOf(env), missing }; };
+/** Write the observation of the current frame directly (no step), with the clock the HUD draws on, ignoring the review gate's verdict */
+const rewrite = (env) => { const missing = env.observer.write(env.B, env.sim.host.clockMs); return { o: obsOf(env), missing }; };
 
 // ---------------------------------------------------------------------------------------------------------------
-test('the layout is the frozen version 1', () => {
-  const frozen = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'schema', 'obs_v1.json'), 'utf8'));
+test('the layout is the frozen version 2', () => {
+  const frozen = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'schema', 'obs_v2.json'), 'utf8'));
   assert.deepEqual(JSON.parse(JSON.stringify(L)), frozen,
     'fields or vocabularies changed: that is a new observation version (bump VERSION, then node js/node/schema.js --write)');
-  assert.equal(L.id, 'v1');
-  assert.equal(L.version, 1);
+  assert.equal(L.id, 'v2');
+  assert.equal(L.version, 2);
   assert.equal(L.bytes % 4, 0);
   for (const f of L.fields) if (f.dtype === 'f4') assert.equal(f.offset % 4, 0, `${f.name} is aligned`);
   const env = createEnv();
@@ -248,7 +248,28 @@ test('floor map: unseen rooms are absent until the game shows them', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-test('secret rooms: nothing until the door has been blown open', () => {
+/** Door sides on whose wall the background bake draws the crack of a hidden door (renderer.js bakeBackground) */
+function cracksDrawn(B) {
+  const { calls } = RP.bakeRoom(B);
+  const sides = new Set();
+  let at = null, dots = 0;
+  const flush = () => {
+    if (at && dots >= 14) {
+      for (const dir of V.door_dirs) {
+        const dt = B.C.DOOR_TILES[dir];
+        if (at[0] === dt.col * 64 + 32 && at[1] === dt.row * 64 + 32) sides.add(dir);
+      }
+    }
+  };
+  for (const c of calls) {
+    if (c.m === 'translate') { flush(); at = c.a; dots = 0; }
+    else if (c.m === 'fillRect' && c.a[2] === 3 && c.a[3] === 3 && c.fill === 'rgba(0,0,0,0.65)') dots++;
+  }
+  flush();
+  return sides;
+}
+
+test('secret rooms: a crack on the wall, nothing else, until the door has been blown open', () => {
   const env = createEnv();
   let found = null;
   for (let k = 0; k < 60 && !found; k++) {
@@ -270,20 +291,28 @@ test('secret rooms: nothing until the door has been blown open', () => {
   assert.equal(ep.done, false, ep.fault && ep.fault.message);
 
   const before = obsOf(env);
-  assert.deepEqual(before.doors[dir], { present: 0, kind: null, locked: 0, closed: 0 }, 'no door');
+  assert.deepEqual(before.doors[dir], { present: 0, kind: null, locked: 0, closed: 0, crack: 1 }, 'no door, only the crack');
+  assert.deepEqual([...cracksDrawn(B)], [dir], 'the renderer draws the crack on exactly that wall');
+  for (const other of V.door_dirs) if (other !== dir) assert.equal(before.doors[other].crack, 0, `no crack ${other}`);
   assert.equal(before.tile(dt.col, dt.row), B.TILES.WALL, 'the door tile reads as wall');
   assert.equal(room.tiles[dt.row * 15 + dt.col], B.TILES.DOOR, '(the game state knows better)');
   const sgx = 3 + d.dx, sgy = 2 + d.dy;
   assert.deepEqual(Object.values(before.map(sgx, sgy)), [0, 0, 0, 0, 0, 0, 0, 0], 'the secret room is not on the map');
   assert.equal(before.map(3, 2)['link_' + dir], 0, 'and no connection leads to it');
   assertMinimapMatchesHud(env, 'hidden');
-  // the same room with an ordinary wall there instead gives the identical observation
+  // the same room with an ordinary wall there instead differs by the crack and nothing else
+  const hidden = env.observation().doors.slice();
   const hiddenBytes = bytes(env);
   const saved = room.doors[dir];
   delete room.doors[dir];
   room.tiles[dt.row * 15 + dt.col] = B.TILES.WALL;
   env.observer.write(B);
-  assert.ok(bytes(env).equals(hiddenBytes), 'a hidden door and a plain wall are indistinguishable');
+  assert.equal(cracksDrawn(B).size, 0, 'a plain wall has no crack');
+  const crackAt = L.fields.find((x) => x.name === 'doors').offset + V.door_dirs.indexOf(dir) * 5 + 4;
+  const diff = [];
+  for (let i = 0; i < hiddenBytes.length; i++) if (bytes(env)[i] !== hiddenBytes[i]) diff.push(i);
+  assert.deepEqual(diff, [crackAt], 'a hidden door and a plain wall differ only in the crack flag');
+  assert.equal(hidden[V.door_dirs.indexOf(dir) * 5 + 4], 1);
   room.doors[dir] = saved;
   room.tiles[dt.row * 15 + dt.col] = B.TILES.DOOR;
 
@@ -293,7 +322,8 @@ test('secret rooms: nothing until the door has been blown open', () => {
   assert.equal(door.edge.hidden, false, 'the explosion opened it');
   assert.equal(ep.done, false);
   const after = obsOf(env);
-  assert.deepEqual(after.doors[dir], { present: 1, kind: 'secret', locked: 0, closed: 0 });
+  assert.deepEqual(after.doors[dir], { present: 1, kind: 'secret', locked: 0, closed: 0, crack: 0 });
+  assert.equal(cracksDrawn(B).size, 0, 'the crack is gone once the door is open');
   assert.equal(after.tile(dt.col, dt.row), B.TILES.DOOR);
   assert.equal(after.map(sgx, sgy).state, 1, 'now seen on the map');
   assert.equal(V.map_icons[after.map(sgx, sgy).icon - 1], 'secret');
@@ -326,7 +356,7 @@ test('enemy health: only while the Code Review item draws health bars', () => {
 
 test('boss bar: the ratio the HUD draws, and nothing about a boss before the fight is on screen', () => {
   const env = createEnv({ observe: 'none' });   // bosses have no reviewed view yet, so the bar is checked on a bare observer
-  const obs = Observe.create('v1');
+  const obs = Observe.create(Observe.ID);
   env.reset({ kind: 'test_room', seed: 'O-BOSS-1', boss: 'monolith', player: { god: true } });
   const B = env.B, boss = env.game.room.enemies.find((e) => e.isBoss);
   const missing = obs.write(B);
@@ -346,7 +376,7 @@ test('boss bar: the ratio the HUD draws, and nothing about a boss before the fig
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-test('Graphics Glitch: the scrambled HUD area is masked for as long as the glitch lasts', () => {
+test('Graphics Glitch: the scrambled HUD area is masked exactly on the frames the HUD scrambles it', () => {
   const env = createEnv();
   env.reset({ kind: 'full_run', seed: 'O-GLITCH-1', player: { god: true, health: 3, guardrails: 2, credits: 5 } });
   env.step(0, 0, 0, 0);
@@ -365,24 +395,51 @@ test('Graphics Glitch: the scrambled HUD area is masked for as long as the glitc
     stats: ['stats_visible', 'damage', 'fire_rate', 'speed', 'range', 'shot_speed', 'luck'],
     items: ['active_visible', 'active_item', 'active_charge', 'active_max'],
   };
+  // Is `kind` scrambled on the HUD as drawn right now? Noise boxes over hearts / active item / minimap, garbled stats.
+  const STATIC = 'rgba(16,12,22,0.92)';
+  const scrambledOnScreen = (kind) => {
+    const hud = RP.drawHud(env.B);
+    if (kind === 'minimap') return RP.minimapFromHud(hud).static;
+    if (kind === 'stats') {
+      const printed = hud.calls.filter((c) => c.m === 'fillText').map((c) => String(c.a[0]));
+      return !printed.includes(g.player.stats.damage.toFixed(2));
+    }
+    const box = kind === 'items' ? [5, 3, 74, 58] : [83, 3, 134, 58];
+    return hud.calls.some((c) => c.m === 'fillRect' && c.fill === STATIC && box.every((v, i) => c.a[i] === v));
+  };
+  const host = env.sim.host, clock0 = host.clockMs;
   for (const kind of ['hearts', 'stats', 'items', 'minimap']) {
-    for (const t of [2.5, 0.4]) {   // 0.4 s: the fading phase, where the game flickers; the mask stays on
+    const seen = { masked: 0, shown: 0 };
+    // 2.5 s: steady; 0.4 s: the fading phase, where the HUD flickers on its clock. 30 consecutive frames each.
+    for (const t of [2.5, 0.4]) for (let fr = 0; fr < 30; fr++) {
+      host.clockMs = (fr + 1000) * (1000 / 60);
       g.hudGlitch = { kind, t, dur: 3 };
       const o = rewrite(env).o;
+      const onScreen = scrambledOnScreen(kind);
+      if (t > 1) assert.equal(onScreen, true, `${kind}: steady glitch is drawn`);
+      const masked = kind === 'minimap' ? o.hud.minimap_visible === 0 : o.player[areas[kind][0]] === 0;
+      assert.equal(masked, onScreen, `${kind} at t ${t}, frame ${fr}: masked exactly when the HUD scrambles it`);
+      seen[masked ? 'masked' : 'shown']++;
       for (const [area, cols] of Object.entries(areas)) {
         for (const c of cols) {
-          if (area === kind) assert.equal(o.player[c], 0, `${kind} glitch hides ${c}`);
-          else assert.equal(o.player[c], clean.player[c], `${kind} glitch leaves ${c} alone`);
+          if (area === kind && masked) assert.equal(o.player[c], 0, `${kind} glitch hides ${c}`);
+          else assert.equal(o.player[c], clean.player[c], `${c} is shown as printed`);
         }
       }
-      assert.equal(o.hud.minimap_visible, kind === 'minimap' ? 0 : 1);
+      assert.equal(o.hud.minimap_visible, kind === 'minimap' && masked ? 0 : 1);
       let cells = 0;
       for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 7; gx++) cells += Object.values(o.map(gx, gy)).reduce((a, b) => a + b, 0);
-      assert.equal(cells === 0, kind === 'minimap', 'the map is blank exactly under a minimap glitch');
+      assert.equal(cells === 0, kind === 'minimap' && masked, 'the map is blank exactly while the minimap is under static');
       assert.deepEqual([o.player.credits, o.player.pushes, o.player.approvals], [5, clean.player.pushes, 0], 'the counters are never scrambled');
     }
-    if (kind === 'minimap') assert.equal(RP.minimapFromHud(RP.drawHud(env.B)).static || g.hudGlitch.t < 1, true);
+    assert.ok(seen.shown >= 10 && seen.masked >= 40, `${kind}: the fading phase shows the values about half the time (${JSON.stringify(seen)})`);
+    // without the clock the observer cannot know the flicker phase and masks the whole glitch
+    g.hudGlitch = { kind, t: 0.4, dur: 3 };
+    env.observer.write(env.B);
+    const o = obsOf(env);
+    assert.equal(kind === 'minimap' ? o.hud.minimap_visible : o.player[areas[kind][0]], 0, `${kind}: no clock, masked`);
   }
+  host.clockMs = clock0;
   g.hudGlitch = null;
   assert.ok(Buffer.from(env.observer.raw).length && rewrite(env).o.player.health === 3);
 });
@@ -419,7 +476,6 @@ test('hidden state does not reach the observation; visible state does', () => {
   }
   // player internals
   same('fire cooldown', () => { p.fireCooldown = 0.77; });
-  same('passive item list', () => { p.items.push('not_shown_anywhere'); });
   same('item state and flags that draw nothing', () => { p.itemState.x = 1; p.flags.homing = true; p.flags.multishot = 3; });
   same('internal velocity and knockback of the player', () => { p.vx += 300; p.vy -= 300; p.kbx = 50; p.kby = 50; });
   // projectiles, bombs, pickups
@@ -462,7 +518,40 @@ test('hidden state does not reach the observation; visible state does', () => {
   assert.equal(obsOf(env).hud.enemies_total, room.enemies.length - 1);
   ghost.alpha = 1; ghost.noShadow = false; env.observer.write(B);
   differs('the floor number', () => { g.depth += 1; }, () => { g.depth -= 1; });
+  differs('a passive item held (named on screen by its pickup banner)', () => { p.items.push('rubber_duck'); }, () => { p.items.pop(); });
   differs('the bomb about to go off', () => { for (const q of room.projectiles) if (q instanceof B.Bomb) { q.__f = q.fuse; q.fuse = 0.3; } }, () => { for (const q of room.projectiles) if (q instanceof B.Bomb) { q.fuse = q.__f; delete q.__f; } });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+test('passive items: the ones held, in pickup order, each of which was named on screen when it was picked up', () => {
+  const env = createEnv();
+  env.reset({ kind: 'test_room', seed: 'O-ITEMS-1', enemies: ['bug'], endOn: [], player: { god: true, items: ['cold_brew', 'linter', 'cold_brew'] } });
+  const B = env.B, g = env.game, p = g.player;
+  let o = obsOf(env);
+  assert.deepEqual(o.items, ['cold_brew', 'linter', 'cold_brew'], 'pickup order, repeats included');
+  assert.equal(o.hud.items_total, 3);
+  assert.equal(o.player.active_item, 0, 'the active item is not in the list (the HUD box shows it)');
+
+  // every way an item reaches the player names it on screen: giveItem sets the banner
+  for (const id of ['regex', 'calculator']) {
+    p.giveItem(id, g);
+    assert.equal(g.bannerState.title, B.ITEMS[id].name, `banner names ${id}`);
+  }
+  assert.deepEqual(rewrite(env).o.items, ['cold_brew', 'linter', 'cold_brew', 'regex', 'calculator']);
+
+  // beyond the cap the first ones are kept and the total is reported
+  while (p.items.length < 70) p.items.push('dark_mode');
+  ({ o } = rewrite(env));
+  assert.equal(o.items.length, 64);
+  assert.deepEqual(o.items.slice(0, 5), ['cold_brew', 'linter', 'cold_brew', 'regex', 'calculator']);
+  assert.equal(o.hud.items_total, 70);
+
+  // an id outside the reviewed vocabulary is not shown and is reported to the review gate
+  p.items.length = 2;
+  p.items.push('not_an_item');
+  const r = rewrite(env);
+  assert.deepEqual(r.missing, ['item:not_an_item']);
+  assert.deepEqual(r.o.items, ['cold_brew', 'linter']);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
