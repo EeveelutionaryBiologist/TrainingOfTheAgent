@@ -1,0 +1,9 @@
+{
+  "description": "One Bug in an empty room on floor 1. Ends when the room is cleared, on death, or after 60 s of play.",
+  "kind": "test_room",
+  "depth": 1,
+  "layout": "empty",
+  "enemies": ["bug"],
+  "endOn": ["room_clear"],
+  "maxPlayFrames": 3600
+}

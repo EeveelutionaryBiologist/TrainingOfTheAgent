@@ -156,6 +156,7 @@ docs/TECHNICAL_PLAN.md          this plan
 docs/observation-spec.md        allowlist and per-entity reviews
 docs/phase0-results.md
 schema/obs_v1.json              observation layout, shared by JS and Python
+scenarios/                      named scenarios as JSON files (scenarios/README.md), load_scenario(name)
 js/core/                        instance, input, flow, scenario, observe/, probe, recorder (browser-compatible)
 js/node/                        loader, worker, protocol
 js/test/                        node:test suites

@@ -10,8 +10,9 @@ import time
 import numpy as np
 
 from . import protocol as P
+from .errors import ScenarioError
 from .replay import verify
-from .scenario import FullRun
+from .scenario import FullRun, load_scenario
 from .task import ReferenceTask, ScenarioTask
 from .vec_env import BotaVecEnv
 
@@ -36,8 +37,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
     workers = args.workers or min(args.envs, os.cpu_count() or 1)
     if args.scenario == "full_run":
         task = ScenarioTask(FullRun(max_play_frames=args.max_play_frames))
-    else:
+    elif args.scenario == "bug_room":
         task = ReferenceTask(max_play_frames=args.max_play_frames)
+    else:
+        task = ScenarioTask(load_scenario(args.scenario))
     env = BotaVecEnv(args.envs, task, workers=workers, game_dir=args.game_dir, profile=args.profile,
                      allow_unpinned=args.allow_unpinned, frame_skip=args.frame_skip, spin_wait=args.spin_wait,
                      shared_code=args.shared_code, probe=args.probe, obs=args.obs)
@@ -119,8 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--workers", type=int, default=0, help="default: min(envs, CPU count)")
     p.add_argument("--secs", type=float, default=10.0)
     p.add_argument("--warmup", type=float, default=5.0)
-    p.add_argument("--scenario", default="bug_room", choices=["bug_room", "full_run"])
-    p.add_argument("--max-play-frames", type=int, default=3600)
+    p.add_argument("--scenario", default="bug_room",
+                   help="bug_room (reference task), full_run, or a scenario name from scenarios/ or a path to a JSON file")
+    p.add_argument("--max-play-frames", type=int, default=3600, help="time limit for bug_room and full_run")
     p.add_argument("--frame-skip", type=int, default=4)
     p.add_argument("--spin-wait", type=float, default=0.002)
     p.add_argument("--shared-code", action="store_true")
@@ -137,7 +141,11 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_replay)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except ScenarioError as err:
+        print(f"bota-harness: {err}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

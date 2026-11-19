@@ -20,6 +20,16 @@ def js_dir() -> Path:
     raise WorkerStartError(f"harness JavaScript not found (looked in: {', '.join(map(str, candidates))})")
 
 
+def scenario_dir() -> Path:
+    """Folder of named scenarios: $BOTA_SCENARIOS, the copy inside an installed wheel, or the repo's scenarios/."""
+    override = os.environ.get("BOTA_SCENARIOS")
+    candidates = [Path(override)] if override else [_PKG / "_scenarios", _PKG.parents[1] / "scenarios"]
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return candidates[-1]
+
+
 def worker_script() -> Path:
     return js_dir() / "node" / "worker.js"
 

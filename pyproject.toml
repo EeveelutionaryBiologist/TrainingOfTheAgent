@@ -28,6 +28,7 @@ packages = ["src/bota_harness"]
 "js/core" = "bota_harness/_js/core"
 "js/node" = "bota_harness/_js/node"
 "package.json" = "bota_harness/package.json"
+"scenarios" = "bota_harness/_scenarios"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -6,10 +6,16 @@ from its own seeded generator.
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping, Sequence, Union
 
 import numpy as np
+
+from .errors import ScenarioError
+from .paths import scenario_dir
 
 SEED_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 END_CONDITIONS = ("room_clear", "boss_kill", "floor_exit")
@@ -108,6 +114,45 @@ class TestRoom:
 
 
 Scenario = Union[FullRun, TestRoom, Mapping[str, Any]]
+
+
+def _scenario_file(name_or_path: str | os.PathLike[str]) -> Path:
+    path = Path(name_or_path)
+    if path.suffix == ".json" or len(path.parts) > 1:
+        return path
+    return scenario_dir() / f"{name_or_path}.json"
+
+
+def _read_scenario_file(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        known = ", ".join(sorted(p.stem for p in scenario_dir().glob("*.json"))) or "none"
+        raise ScenarioError(f"no scenario file {path} (named scenarios: {known})") from None
+    except json.JSONDecodeError as err:
+        raise ScenarioError(f"{path} is not valid JSON: {err}") from None
+    if not isinstance(data, dict) or "kind" not in data:
+        raise ScenarioError(f"{path} does not hold a scenario (an object with a \"kind\")")
+    return data
+
+
+def load_scenario(name_or_path: str | os.PathLike[str]) -> dict[str, Any]:
+    """A scenario from the scenarios/ folder by name ("single_bug"), or from a JSON file by path.
+
+    The file holds the JSON form that js/core/scenario.js validates, plus an optional "description", which is
+    dropped here. Validation itself happens in the worker at reset, like for any other scenario.
+    """
+    data = _read_scenario_file(_scenario_file(name_or_path))
+    data.pop("description", None)
+    return data
+
+
+def list_scenarios() -> dict[str, str]:
+    """Named scenarios in the scenarios/ folder: name → description."""
+    out = {}
+    for path in sorted(scenario_dir().glob("*.json")):
+        out[path.stem] = str(_read_scenario_file(path).get("description", ""))
+    return out
 
 
 def to_dict(scenario: Scenario) -> dict[str, Any]:
