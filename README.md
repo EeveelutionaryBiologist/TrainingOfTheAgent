@@ -17,3 +17,5 @@ This is an experiment, and it may well fail. If it does, we will at least know w
 killed by a Flaky Test several million times, which is more than most of us can say.
 
 See [REQUIREMENTS.md](REQUIREMENTS.md) for the current plan.
+
+To run the game yourself, or watch the agent die in a browser, see [docs/USAGE.md](docs/USAGE.md).
