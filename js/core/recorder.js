@@ -31,32 +31,64 @@
   }
 
   /**
+   * Frame-by-frame replay of a transcript, for callers that want to stop in between (the browser viewer).
+   * instance: { B, host } with no keys held (a fresh one, or one a previous replay finished on); host may be null.
+   * The constructor rebuilds the scenario; then step() advances one frame until done.
+   */
+  class Replayer {
+    constructor(instance, transcript) {
+      this.transcript = validate(transcript);
+      this.scenario = Scenario.normalize(this.transcript.scenario);
+      this.sim = new S.Sim(instance.B, instance.host);
+      this.sim.reset(this.scenario.seed, { depth: this.scenario.depth });
+      Scenario.build(this.sim.B, this.scenario);
+      this.next = 0;                                   // index into transcript.keys
+      this.held = new Set();                           // key codes currently held by the recording
+    }
+
+    get frame() { return this.sim.frame; }
+    get endFrame() { return this.transcript.endFrame; }
+    get done() { return this.sim.frame >= this.transcript.endFrame; }
+
+    /** Advance one frame (key events of this frame first, as Env did). Returns false once the recording is over. */
+    step() {
+      if (this.done) return false;
+      const t = this.transcript, k = t.keys, sim = this.sim;
+      if (sim.frame >= t.startFrame) {
+        while (this.next < k.length && k[this.next] === sim.frame) {
+          const code = t.codes[k[this.next + 1]], down = k[this.next + 2] === 1;
+          sim.raw(code, down);
+          if (down) this.held.add(code); else this.held.delete(code);
+          this.next += 3;
+        }
+      }
+      sim.step();
+      return true;
+    }
+
+    /** Hash of the current state, compared with the recorded one. Releases all keys (the instance may be reused). */
+    finish() {
+      const h = new S.Hasher();
+      S.hashState(this.sim.B, h);
+      const signature = h.hex();
+      this.sim.releaseAll();
+      this.held.clear();
+      return { ok: signature === this.transcript.signature, signature, expected: this.transcript.signature, frames: this.sim.frame, sim: this.sim };
+    }
+  }
+
+  /**
    * Replay a transcript on an instance that has no keys held (a fresh one, or one a previous replay finished on).
    * instance: { B, host } (host may be null in a browser)
    * hooks: { onFrame(sim) } — called after every frame, e.g. to render
    * Returns { ok, signature, expected, frames }; ok means the final state hash equals the recorded one.
    */
   function replay(instance, transcript, hooks) {
-    const t = validate(transcript);
-    const sc = Scenario.normalize(t.scenario);
-    const sim = new S.Sim(instance.B, instance.host);
-    sim.reset(sc.seed, { depth: sc.depth });
-    Scenario.build(sim.B, sc);
+    const r = new Replayer(instance, transcript);
     const onFrame = hooks && hooks.onFrame;
-    while (sim.frame < t.startFrame) { sim.step(); if (onFrame) onFrame(sim); }
-    const k = t.keys;
-    let i = 0;
-    while (sim.frame < t.endFrame) {
-      while (i < k.length && k[i] === sim.frame) { sim.raw(t.codes[k[i + 1]], k[i + 2] === 1); i += 3; }
-      sim.step();
-      if (onFrame) onFrame(sim);
-    }
-    const h = new S.Hasher();
-    S.hashState(sim.B, h);
-    const signature = h.hex();
-    sim.releaseAll();   // leave no key held in the game's input module (the instance may be reused)
-    return { ok: signature === t.signature, signature, expected: t.signature, frames: sim.frame, sim };
+    while (r.step()) if (onFrame) onFrame(r.sim);
+    return r.finish();
   }
 
-  return { replay, validate };
+  return { replay, validate, Replayer };
 });

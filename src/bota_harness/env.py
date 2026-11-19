@@ -5,6 +5,8 @@ For training use `BotaVecEnv` directly.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -65,6 +67,10 @@ class BotaEnv(gym.Env):
 
     def transcript(self) -> dict[str, Any]:
         return self.vec.transcript(0)
+
+    def save_transcript(self, path: str | os.PathLike) -> Path:
+        """Save the current or just finished episode's recording (needs record=True); `path` may be a folder."""
+        return self.vec.save_transcript(0, path)
 
     def describe(self) -> dict[str, Any]:
         return self.vec.describe()

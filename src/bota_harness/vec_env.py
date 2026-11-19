@@ -24,10 +24,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import operator
 import os
 import time
 from collections import deque
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
@@ -37,6 +39,7 @@ from gymnasium.vector.utils import batch_space
 
 from . import protocol as P
 from .errors import HarnessError, ResetError, ScenarioError, WorkerFailure, WorkerRequestError
+from .replay import save_transcript
 from .scenario import Scenario, random_seed, to_dict
 from .task import Columns, EpisodeResult, StepData, Task
 from .worker import WorkerPool
@@ -554,6 +557,7 @@ class BotaVecEnv(VectorEnv):
     # ---- privileged access --------------------------------------------------------------------------------
     def _request(self, i: int, op: int, tail: dict[str, Any]) -> Any:
         self._require_open()
+        i = operator.index(i)   # NumPy integers too (np.flatnonzero(info["_result"])); they are not JSON-serialisable
         if not 0 <= i < self.num_envs:
             raise IndexError(f"environment index {i} out of range")
         w = self._pool.worker_of(i)
@@ -579,6 +583,13 @@ class BotaVecEnv(VectorEnv):
         if not self.record:
             raise HarnessError("no recording: create the environment with record=True")
         return self._request(i, P.OP_TRANSCRIPT, {})["transcript"]
+
+    def save_transcript(self, i: int, path: str | os.PathLike) -> Path:
+        """Save environment `i`'s recording as JSON (see `bota_harness.save_transcript`; `path` may be a folder).
+
+        With the default autoreset, call it in the step that ended the episode (`info["_result"][i]` is True):
+        the next step starts a new episode, and its recording replaces this one."""
+        return save_transcript(self.transcript(i), path)
 
     def worker_stats(self) -> list[dict[str, Any]]:
         """Per worker: requests, steps, resets, seconds spent computing steps (`busySeconds`, resets included),

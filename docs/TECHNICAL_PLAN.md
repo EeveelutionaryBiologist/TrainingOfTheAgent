@@ -351,3 +351,22 @@ The user reviewed `docs/observation-spec.md`. Changes, all in `js/core/observe.j
 | List caps | Unchanged. | – |
 | Glitch flicker | Follow the screen. | The masks reproduce `hud.js glitchFor`, including the flicker in the last second, on the instance's clock (`Env` passes `host.clockMs` to `write`). Without a clock: masked for the whole glitch, as before. Test compares with the HUD's drawing frame by frame. |
 
+
+## Replay viewer (2026-11-19): built (R22, first half of Phase 4)
+
+Code: `js/node/viewer.js` (local web server), `js/viewer/` (page), `Recorder.Replayer` in `js/core/recorder.js`
+(frame-by-frame replay, also used by `replay()`), `save_transcript` / `load_transcript` in
+`src/bota_harness/replay.py`. Tests: `js/test/viewer.test.js`, `tests/test_transcripts.py`; in a real browser
+`bench/viewer_check.js` (`npm run check:viewer`).
+
+| Topic | Decision |
+|---|---|
+| How the page gets the game | A local server (127.0.0.1, no dependencies) verifies the pinned checkout like the loader and serves exactly the scripts its `index.html` lists, without `main.js`. A browser cannot read `index.html`'s script list or the transcript folder from `file://`. |
+| Same game as headless | Before the game loads, the page installs `detmath.js` (or not, as the transcript records), a seeded `Math.random` and `performance.now()` on the simulation clock, through the same host interface `Sim` uses in Node. Animations and the HUD glitch flicker therefore look as they did for the agent. A recording made with the other math setting reloads the page with `?math=native`. |
+| Profile | The page always loads the full profile (particles, sound code muted). Lean and full give identical trajectories (Phase 0); the page's own end-state check confirms it per recording. |
+| Seeking backwards | No snapshots: the replay is rebuilt from the start and fast-forwarded without drawing, within a time budget per animation frame. |
+| Verdict | When the end is reached, the page compares the state hash with the recorded one and shows the result. |
+| Saving | `save_transcript(t, path)` writes JSON atomically; a folder as `path` names the file `<kind>-<seed>-<reason>-<time>.json`. `BotaVecEnv.save_transcript(i, path)` must be called in the step that ended the episode (autoreset replaces the recording on the next step). |
+
+Fixed on the way: `BotaVecEnv` per-env calls (`transcript`, `call`, `snapshot`, ...) failed with NumPy integer
+indices such as those from `np.flatnonzero(info["_result"])`.

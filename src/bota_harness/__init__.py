@@ -11,6 +11,7 @@ from .env import BotaEnv
 from .errors import (HarnessError, ResetError, ScenarioError, WorkerCrashed, WorkerFailure, WorkerRequestError,
                      WorkerStartError, WorkerTimeout)
 from .protocol import ACTION_NVEC, MOVES, REASONS, SHOTS
+from .replay import load_transcript, save_transcript
 from .scenario import FullRun, Player, Scenario, TestRoom, list_scenarios, load_scenario, random_seed
 from .task import Columns, EpisodeResult, ReferenceTask, ScenarioTask, StepData, Task
 from .vec_env import BotaVecEnv
@@ -20,6 +21,7 @@ __version__ = "0.2.0"
 __all__ = [
     "ACTION_NVEC", "MOVES", "REASONS", "SHOTS",
     "BotaEnv", "BotaVecEnv",
+    "load_transcript", "save_transcript",
     "FullRun", "Player", "Scenario", "TestRoom", "list_scenarios", "load_scenario", "random_seed",
     "Columns", "EpisodeResult", "ReferenceTask", "ScenarioTask", "StepData", "Task",
     "HarnessError", "ResetError", "ScenarioError", "WorkerCrashed", "WorkerFailure", "WorkerRequestError",

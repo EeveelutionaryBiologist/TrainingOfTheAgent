@@ -1,4 +1,4 @@
-"""Command line: `bota-harness info | bench | replay`."""
+"""Command line: `bota-harness info | bench | replay | view`."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +11,7 @@ import numpy as np
 
 from . import protocol as P
 from .errors import ScenarioError
+from .paths import js_dir, node_binary
 from .replay import verify
 from .scenario import FullRun, load_scenario
 from .task import ReferenceTask, ScenarioTask
@@ -108,6 +109,23 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_view(args: argparse.Namespace) -> int:
+    """Run the replay viewer (js/node/viewer.js) until Ctrl+C."""
+    import subprocess
+    env = dict(os.environ)
+    if args.game_dir:
+        env["BOTA_GAME_DIR"] = args.game_dir
+    if args.allow_unpinned:
+        env["BOTA_ALLOW_UNPINNED"] = "1"
+    cmd = [node_binary(), str(js_dir() / "node" / "viewer.js"), *args.paths, "--port", str(args.port)]
+    if args.open:
+        cmd.append("--open")
+    try:
+        return subprocess.call(cmd, env=env)
+    except KeyboardInterrupt:
+        return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bota-harness", description="Environment harness for The Binding of the Agent")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -139,6 +157,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("transcripts", nargs="+")
     p.add_argument("--game-dir", default=None)
     p.set_defaults(fn=cmd_replay)
+
+    p = sub.add_parser("view", help="watch recorded episodes in the real game in a browser (local web server)")
+    p.add_argument("paths", nargs="*", help="transcript files or folders of them (folders are re-read while running)")
+    p.add_argument("--port", type=int, default=8765, help="first port to try (default 8765)")
+    p.add_argument("--open", action="store_true", help="open the page in the default browser")
+    p.add_argument("--game-dir", default=None)
+    p.add_argument("--allow-unpinned", action="store_true")
+    p.set_defaults(fn=cmd_view)
 
     args = ap.parse_args(argv)
     try:

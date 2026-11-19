@@ -27,6 +27,7 @@ packages = ["src/bota_harness"]
 [tool.hatch.build.targets.wheel.force-include]
 "js/core" = "bota_harness/_js/core"
 "js/node" = "bota_harness/_js/node"
+"js/viewer" = "bota_harness/_js/viewer"
 "package.json" = "bota_harness/package.json"
 "scenarios" = "bota_harness/_scenarios"
 
