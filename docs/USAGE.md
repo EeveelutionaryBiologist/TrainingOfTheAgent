@@ -41,6 +41,10 @@ npm test                        # JS suite (about 10 s)
 uv run pytest                   # Python suite (about 30 s)
 ```
 
+`bota_harness` is installed only in the project's environment (`.venv`), so run your own scripts with
+`uv run python script.py` from the repo folder (from elsewhere: `uv run --project <repo> python script.py`, or
+activate it with `source <repo>/.venv/bin/activate`). A plain `python script.py` fails with `ModuleNotFoundError`.
+
 ## First run
 
 ```python
