@@ -116,6 +116,9 @@ class TestRoom:
 Scenario = Union[FullRun, TestRoom, Mapping[str, Any]]
 
 
+SCENARIO_NOTES = ("description", "observation")   # keys of a scenario file that are notes, not scenario fields
+
+
 def _scenario_file(name_or_path: str | os.PathLike[str]) -> Path:
     path = Path(name_or_path)
     if path.suffix == ".json" or len(path.parts) > 1:
@@ -139,11 +142,13 @@ def _read_scenario_file(path: Path) -> dict[str, Any]:
 def load_scenario(name_or_path: str | os.PathLike[str]) -> dict[str, Any]:
     """A scenario from the scenarios/ folder by name ("single_bug"), or from a JSON file by path.
 
-    The file holds the JSON form that js/core/scenario.js validates, plus an optional "description", which is
-    dropped here. Validation itself happens in the worker at reset, like for any other scenario.
+    The file holds the JSON form that js/core/scenario.js validates, plus two optional notes that are dropped
+    here: "description", and "observation": "none" for scenarios with content the fair observation has not
+    reviewed yet (run those with obs="none"). Validation happens in the worker at reset, as for any scenario.
     """
     data = _read_scenario_file(_scenario_file(name_or_path))
-    data.pop("description", None)
+    for note in SCENARIO_NOTES:
+        data.pop(note, None)
     return data
 
 

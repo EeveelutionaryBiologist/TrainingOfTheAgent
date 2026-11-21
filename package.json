@@ -12,6 +12,7 @@
     "check:test-room": "node bench/test_room.js",
     "check:viewer": "node bench/viewer_check.js",
     "view": "node js/node/viewer.js",
+    "catalog": "node js/node/catalog.js --write",
     "bench:heavy": "node bench/heavy_rooms.js",
     "bench:instances": "node bench/instances.js",
     "bench:bridge": "python3 bench/bridge_bench.py"

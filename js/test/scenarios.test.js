@@ -8,33 +8,60 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createEnv, Scenario } = require('../node/index.js');
+const { createEnv, Scenario, Observe } = require('../node/index.js');
 const { hunt, charge, run } = require('./helpers.js');
 const { decode, V } = require('./obs_helpers.js');
 
 const DIR = path.join(__dirname, '..', '..', 'scenarios');
-/** The scenario of a file, as Python's load_scenario hands it over: description dropped, seed drawn by the env */
+const NOTES = ['description', 'observation'];
+/** The scenario of a file, as Python's load_scenario hands it over: notes dropped, seed drawn by the env */
 function load(name, seed) {
   const spec = JSON.parse(fs.readFileSync(path.join(DIR, `${name}.json`), 'utf8'));
-  delete spec.description;
+  for (const k of NOTES) delete spec[k];
   return Object.assign({ seed }, spec);
 }
 const NAMES = fs.readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)).sort();
 
+/** Start `name` on up to 20 seeds; seeds the scenario does not fit (retryable errors) are skipped, as the env does */
+function starts(env, name, want) {
+  let ok = 0;
+  for (let k = 0; k < 20 && ok < want; k++) {
+    try {
+      const ep = env.reset(load(name, `NAMED-${k}`));
+      assert.equal(ep.done, false, `${name}: starts (${ep.fault && ep.fault.message})`);
+      ok++;
+    } catch (err) {
+      if (!(err instanceof Scenario.ScenarioError) || !err.retryable) throw err;
+    }
+  }
+  return ok;
+}
+
 test('every scenario file is valid, described, leaves the seed to the env, and starts', () => {
   assert.ok(NAMES.includes('single_bug'));
-  const env = createEnv();
+  const fair = createEnv(), bare = createEnv({ observe: 'none' });
+  const reviewed = new Set(Observe.LAYOUT.reviewed.enemies);
   for (const name of NAMES) {
     const raw = JSON.parse(fs.readFileSync(path.join(DIR, `${name}.json`), 'utf8'));
     assert.equal(typeof raw.description, 'string', `${name}: has a description`);
     assert.ok(raw.description.length > 10, `${name}: the description says something`);
     assert.equal(raw.seed, undefined, `${name}: no fixed seed, so every episode gets a fresh floor`);
-    for (const seed of ['NAMED-1', 'NAMED-2', 'NAMED-3']) {
-      Scenario.normalize(load(name, seed));
-      const ep = env.reset(load(name, seed));
-      assert.equal(ep.done, false, `${name} / ${seed}: starts (${ep.fault && ep.fault.message})`);
+    assert.ok(raw.observation === undefined || raw.observation === 'none', `${name}: "observation" is "none" or absent`);
+    Scenario.normalize(load(name, 'NAMED-0'));
+    const needsNone = raw.observation === 'none';
+    assert.equal(starts(needsNone ? bare : fair, name, 3), 3, `${name}: starts on three seeds`);
+    // the note must be honest: test rooms without it use reviewed content only, test rooms with it do not
+    if (raw.kind === 'test_room') {
+      const ids = (raw.enemies || []).map((e) => (typeof e === 'string' ? e : e.id));
+      const unreviewed = raw.boss !== undefined || ids.some((id) => !reviewed.has(id));
+      assert.equal(needsNone, unreviewed, `${name}: "observation": "none" ${unreviewed ? 'is needed' : 'is not needed'}`);
     }
   }
+});
+
+test('the id catalog in scenarios/README.md is up to date', () => {
+  const Catalog = require('../node/catalog.js');
+  assert.equal(Catalog.readmeSection(), Catalog.catalog(), 'regenerate it: node js/node/catalog.js --write');
 });
 
 test('single_bug: one Bug and nothing else, through a real door; cleared by killing it, lost by dying, capped at 60 s', () => {
