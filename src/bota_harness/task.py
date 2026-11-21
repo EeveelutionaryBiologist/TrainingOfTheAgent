@@ -6,7 +6,7 @@ A task decides three things and nothing else:
     success()   whether a finished episode met the goal's own criterion (never derived from reward, R13)
 
 Rewards are computed from the PRIVILEGED side channel: event counters and, if the task asks for it, the raw state
-probe. Neither is part of the observation. Goal rewards live in the training repo; this package ships only the
+probe. Neither is part of the observation. Goal rewards live on the agent side (src/bota_agent); this package ships only the
 neutral default and a small reference task for its tests.
 """
 from __future__ import annotations

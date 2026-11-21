@@ -207,3 +207,4 @@ Potentially, the environmental harness should be moved to it's own repository
 | 2026-11-11 | Goal 0 and Goal 1 defined as in §2. |
 | 2026-11-11 | Human demonstrations shelved. |
 | 2026-11-18 | Observation review: the secret-door crack is observed; the passive item list is exposed (optional for the model); the glitch mask follows the screen frame by frame; list caps stay. Observation version 2. |
+| 2026-11-21 | One repository: harness and agent side (policies, evaluation, training) both live here; the harness stays policy-agnostic. Baselines first: do-nothing, uniform random, sticky random; the untrained network follows the architecture discussion. Goal 0 is to be sharpened after the baseline numbers. |

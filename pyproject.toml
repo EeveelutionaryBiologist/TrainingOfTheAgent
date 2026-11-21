@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 bota-harness = "bota_harness.cli:main"
+bota-agent = "bota_agent.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -21,7 +22,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bota_harness"]
+packages = ["src/bota_harness", "src/bota_agent"]
 
 # The Node side travels inside the wheel. An editable install uses the repo's js/ folder instead.
 [tool.hatch.build.targets.wheel.force-include]
@@ -30,6 +31,7 @@ packages = ["src/bota_harness"]
 "js/viewer" = "bota_harness/_js/viewer"
 "package.json" = "bota_harness/package.json"
 "scenarios" = "bota_harness/_scenarios"
+"evals" = "bota_agent/_evals"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

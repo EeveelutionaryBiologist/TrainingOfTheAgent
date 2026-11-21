@@ -7,6 +7,10 @@ pinned at `v1.0`, commit `cc5cba4`). This repo is only the **environment harness
 loads the game without a browser, steps it frame-exactly, feeds keyboard input, sets up scenarios, and exposes a
 fair observation. Training, goal rewards and evaluation live in a separate training repo.
 
+> **Changed 2026-11-21:** there is no separate training repo. The agent side (policies, evaluation, later
+> training) lives in this repo as the package `src/bota_agent`; the harness (`src/bota_harness`, `js/`) stays
+> unaware of policies. See "Agent side: baselines and evaluation" at the end.
+
 Decisions taken with the user (2026-11-12):
 
 | Topic | Decision |
@@ -44,7 +48,7 @@ Probe: floor 1, random policy, one core, in-memory only. Numbers are indicative,
 ## Architecture
 
 ```
-Python (training repo)                    Python (this repo)                       Node worker process (this repo)
+Python (bota_agent)                       Python (bota_harness)                       Node worker process (this repo)
   policy, Task (reward) ── Gymnasium ──▶  BotaVecEnv ── binary frames, stdio ──▶  K game instances
                                           WorkerPool (W processes)                  loader · input · flow · scenario
                                                                                     observer (fair) · probe (privileged)
@@ -370,3 +374,37 @@ Code: `js/node/viewer.js` (local web server), `js/viewer/` (page), `Recorder.Rep
 
 Fixed on the way: `BotaVecEnv` per-env calls (`transcript`, `call`, `snapshot`, ...) failed with NumPy integer
 indices such as those from `np.flatnonzero(info["_result"])`.
+
+## Agent side: baselines and evaluation (2026-11-21)
+
+Decided with the user: harness and agent side share this repo (no separate training repo). The agent side is
+the package `src/bota_agent`; the harness stays policy-agnostic. Code: `policy.py` (interface, baselines),
+`evaluate.py` (suites, runner, summary), `cli.py` (`bota-agent`); suites in `evals/`; tests in
+`tests/test_agent.py`.
+
+| Topic | Decision |
+|---|---|
+| Policy interface | `initial_state(n)`, `reset(state, mask, episode_keys)`, `act(obs, state) -> (actions, state)`. Explicit per-env state with resets at episode starts, as a recurrent network will need. |
+| Baselines | Do-nothing, uniform random, sticky random (hold 8 decisions; taps once per period). The untrained network is the fourth baseline, after the architecture discussion. |
+| Reproducibility | Policies seed per episode from (policy seed, scenario seed): results do not depend on the number of environments or workers (tested). |
+| Fixed seed lists | A suite's seeds are handed out one per new episode under the normal autoreset; once used up, filler episodes run and are discarded (autoreset `DISABLED` cannot leave finished environments idle). Evaluation seeds contain `-`, training seeds never do. |
+| Report | Rates with Wilson 95 % intervals, median time to success, damage, per-seed results for paired comparisons, a few recordings. |
+
+First run, `single_bug`, 1,000 seeds, frame-skip 4 (dev laptop, 64 envs on 16 workers, 30–40 s per policy):
+
+| Policy | Room cleared | Died | Time limit (60 s) | Median s to clear | Episodes with damage | Damage per episode |
+|---|---|---|---|---|---|---|
+| null | 0.0 % | 1.1 % | 98.9 % | – | 27 % | 0.58 |
+| uniform | 76.1 % [73.4–78.6] | 0.5 % | 23.4 % | 27.5 | 97 % | 2.27 |
+| sticky:8 | 73.1 % [70.3–75.8] | 0.9 % | 26.0 % | 28.2 | 72 % | 1.59 |
+
+Seed by seed, uniform and sticky both clear 575 floors, only one of them 186 (uniform) and 156 (sticky), neither
+83. Observations for the Goal 0 definition (not decided yet):
+
+- "Survive" is met by doing nothing: 98.9 % of null episodes reach the time limit alive. A single Bug kills the
+  player in about 1 % of episodes whatever the policy does.
+- Random play already clears three rooms in four, in about 28 s. A meaningful Goal 0 needs a sharper criterion:
+  a near-perfect clear rate, a time to clear well below random, damage taken, or a harder room.
+- Uniform random presses Force Push at half of all decisions: the one push of a fresh run is gone at once and
+  271 presses per episode are refused.
+

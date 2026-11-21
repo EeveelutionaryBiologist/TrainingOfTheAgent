@@ -13,6 +13,7 @@ observations and rewards, record episodes and watch them. For why things are the
 - [Recording and watching episodes](#recording-and-watching-episodes)
 - [Faults](#faults)
 - [Privileged access](#privileged-access)
+- [Baselines and evaluation](#baselines-and-evaluation)
 - [Command line](#command-line)
 - [Using it from Node](#using-it-from-node)
 - [Checks and benchmarks](#checks-and-benchmarks)
@@ -147,7 +148,7 @@ env = BotaVecEnv(64, BugRoom())
 - `success(episode)`: receives an `EpisodeResult` (below). Return `None` for "no criterion".
 
 Ready-made: `Task()` (full runs, reward 0), `ScenarioTask(scenario)` (always that scenario, reward 0),
-`ReferenceTask()` (two Bugs, the test fixture). Goal rewards belong in the training repo.
+`ReferenceTask()` (two Bugs, the test fixture). Goal rewards belong on the agent side (`src/bota_agent`).
 
 ### Event counters
 
@@ -390,6 +391,67 @@ For debugging, tests and curriculum setup; never through the action space. All t
 
 Calls that change the game mark the episode as `tampered`, and events they cause are not counted.
 
+## Baselines and evaluation
+
+The agent side lives in `src/bota_agent`. For now it holds the policy interface, three baseline policies and an
+evaluation runner; learned policies come later and use the same interface.
+
+### Policy interface
+
+```python
+state = policy.initial_state(n_envs)
+state = policy.reset(state, mask, episode_keys)    # start of episodes: all after env.reset, info["reset"] after a step
+actions, state = policy.act(obs, state)            # obs: dict of (n_envs, ...) arrays → int array (n_envs, 4)
+```
+
+`state` is per environment (a recurrent network's hidden state, a baseline's random generator). `episode_keys`
+identify the new episodes; the evaluation passes the scenario seed, and policies that sample seed their
+randomness from it, so an episode plays out the same in any environment slot, batch or worker layout.
+
+| Policy | `make_policy` spec | Behaviour |
+|---|---|---|
+| `NullPolicy()` | `null` | always `[0, 0, 0, 0]` |
+| `UniformRandomPolicy(seed)` | `uniform` | every head uniformly at random at every decision (jitters in place; presses Force Push at half of all decisions) |
+| `StickyRandomPolicy(hold, seed)` | `sticky`, `sticky:<hold>` | a new uniformly random input every `hold` decisions (default 8 ≈ 0.5 s); movement and shooting held, Force Push and active item tapped once per period |
+
+### Evaluation suites
+
+`evals/<name>.json` names a scenario and a fixed list of seeds that every policy plays once (R18):
+
+```json
+{"description": "...", "scenario": "single_bug", "seed_prefix": "EVAL-SB-", "episodes": 1000, "success": ["room_clear"]}
+```
+
+gives the seeds `EVAL-SB-0000` … `EVAL-SB-0999` (or list them under `"seeds"`). `scenario` is a name from
+`scenarios/` or an inline scenario without a seed. Training draws seeds of A–Z and 0–9 only, so a seed with `-`
+never turns up in training. `success` lists the end reasons that count as success.
+
+### Running an evaluation
+
+```
+uv run bota-agent suites                                             # list suites
+uv run bota-agent eval                                               # all three baselines on single_bug
+uv run bota-agent eval --policy sticky:4 sticky:16 --episodes 200    # other policies, first 200 seeds
+```
+
+Prints a table per policy: success, death and time-limit rates with 95 % confidence intervals (Wilson), median
+seconds to success, damage per episode. Results go to `runs/eval/<suite>/<time>/<policy>/` (git-ignored):
+`summary.json` (policy, suite, summary and `describe()` of the run), `episodes.jsonl` (one line per seed, for
+seed-by-seed comparisons) and `recordings/` (the first `--record` seeds, default 5; watch them with
+`uv run bota-harness view runs/eval/.../recordings/`). Options: `--envs`, `--workers`, `--frame-skip`, `--seed`
+(the policies' own randomness), `--json`.
+
+From Python:
+
+```python
+from bota_agent import StickyRandomPolicy, evaluate, load_suite, write_run
+run = evaluate(StickyRandomPolicy(hold=8), load_suite("single_bug", episodes=200), num_envs=32)
+print(run.summary["success"])          # {"count": ..., "rate": ..., "ci95": [lo, hi]}
+write_run(run, "runs/my_eval")
+```
+
+The same policy on the same suite gives the same results with any number of environments and workers (tested).
+
 ## Command line
 
 ```
@@ -398,6 +460,8 @@ uv run bota-harness bench [--scenario bug_room|full_run|<name>|<file>] [--envs N
                           [--obs v2|none] [--frame-skip N] [--probe] [--shared-code] [--json]
 uv run bota-harness replay FILE [FILE ...]
 uv run bota-harness view [FILE|FOLDER ...] [--port 8765] [--open]
+uv run bota-agent suites
+uv run bota-agent eval [--suite NAME] [--policy SPEC ...] [--episodes N] [--envs N] [--record N] [--out DIR] [--json]
 ```
 
 - `info`: verifies the checkout and prints `describe()`.
