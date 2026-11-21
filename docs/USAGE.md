@@ -105,8 +105,11 @@ list_scenarios()                     # {"single_bug": "One Bug in an empty room 
 sc = load_scenario("single_bug")     # a dict; also accepts a path to any JSON file
 ```
 
-To add one, drop a file into `scenarios/`. The tests start every file in that folder once
-(`js/test/scenarios.test.js`).
+**[`scenarios/README.md`](../scenarios/README.md)** has the full field reference, an example file for every
+construction pattern (counts, custom layouts, boss rooms, player setup, survival tasks, full runs), and the list
+of every valid id: floors, enemies, bosses, items and layouts (with pictures), each marked with whether the fair
+observation covers it yet. To add a scenario, copy the closest example; the tests start every file in that folder
+on three seeds (`js/test/scenarios.test.js`).
 
 ### What can appear in a room
 
