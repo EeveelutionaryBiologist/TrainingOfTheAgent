@@ -1,0 +1,14 @@
+{
+  "description": "A run from floor 2 in god mode with ten Force Pushes: explore, open secret rooms, nothing can kill you. Pattern: full run, start depth, god mode; needs obs=\"none\".",
+  "observation": "none",
+  "kind": "full_run",
+  "depth": 2,
+  "player": {
+    "god": true,
+    "pushes": 10
+  },
+  "endOn": [
+    "floor_exit"
+  ],
+  "maxPlayFrames": 18000
+}

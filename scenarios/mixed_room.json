@@ -1,0 +1,14 @@
+{
+  "description": "A Memory Leak, two Null Pointers and a Bug between pillars. Pattern: plain ids and counts mixed in one list.",
+  "kind": "test_room",
+  "layout": "pillars",
+  "enemies": [
+    "memory_leak",
+    {
+      "id": "null_pointer",
+      "count": 2
+    },
+    "bug"
+  ],
+  "maxPlayFrames": 3600
+}

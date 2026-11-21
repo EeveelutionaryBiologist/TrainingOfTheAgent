@@ -1,0 +1,11 @@
+{
+  "description": "A Flaky Test and Spaghetti Code, which shoot back. Pattern: unreviewed enemies; needs obs=\"none\".",
+  "observation": "none",
+  "kind": "test_room",
+  "depth": 2,
+  "enemies": [
+    "flaky_test",
+    "spaghetti_code"
+  ],
+  "maxPlayFrames": 3600
+}

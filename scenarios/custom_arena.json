@@ -1,0 +1,22 @@
+{
+  "description": "A hand-drawn room with pits, spikes and rocks, and four spawn points. Pattern: your own layout rows.",
+  "kind": "test_room",
+  "layout": {
+    "rows": [
+      ".....r.r.....",
+      ".e.........e.",
+      "..pp.....pp..",
+      ".....sss.....",
+      "..pp.....pp..",
+      ".e.........e.",
+      ".....r.r....."
+    ]
+  },
+  "enemies": [
+    "bug",
+    "bug",
+    "null_pointer",
+    "null_pointer"
+  ],
+  "maxPlayFrames": 3600
+}

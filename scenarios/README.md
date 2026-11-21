@@ -1,25 +1,390 @@
 # Scenarios
 
-One JSON file per scenario. The file name without `.json` is the scenario's name.
+A scenario is what an environment sets up at every reset: a normal run from a seed, or a constructed fight in a
+test room. This folder holds named scenarios, one JSON file each; the file name without `.json` is the name.
 
-The format is the one `js/core/scenario.js` defines and validates (see the comment at its top), plus an optional
-`description`. Leave `seed` out unless the scenario needs one particular floor: the environment then draws a
-fresh seed for every episode.
+- [Using a scenario](#using-a-scenario)
+- [Fields](#fields)
+- [Adding a scenario](#adding-a-scenario)
+- [Scenarios in this folder](#scenarios-in-this-folder) (examples of every construction pattern)
+- [Valid ids](#valid-ids): floors, enemies, bosses, items, layouts
+
+## Using a scenario
 
 ```python
 from bota_harness import BotaVecEnv, ScenarioTask, list_scenarios, load_scenario
 
-list_scenarios()                                   # {"single_bug": "One Bug in an empty room ..."}
-env = BotaVecEnv(16, ScenarioTask(load_scenario("single_bug")))
+list_scenarios()                                         # name → description
+env = BotaVecEnv(16, ScenarioTask(load_scenario("bug_swarm")))
+env = BotaVecEnv(16, ScenarioTask(load_scenario("boss_monolith")), obs="none")   # unreviewed content
 ```
 
 ```
-uv run bota-harness bench --scenario single_bug    # random policy on it
+uv run bota-harness bench --scenario bug_swarm           # random policy on it
 ```
 
-`load_scenario` also takes a path, so scenarios can live elsewhere. Every file in this folder is validated and
-started once by the tests (`js/test/scenarios.test.js`, `tests/test_scenarios.py`).
+`load_scenario` also takes a path, so scenarios can live elsewhere. The same JSON works inline:
+`ScenarioTask({"kind": "test_room", "enemies": ["bug"]})`, or with the dataclasses
+`TestRoom(enemies=["bug"], max_play_frames=3600)` and `FullRun(...)` (Python field names are snake_case, JSON
+names camelCase). A test room rebuilds the room next to the start room and walks the player in through the door,
+so doors close, enemies wake up and the clear event fires as in a real fight.
 
-| Scenario | What it sets up |
+## Fields
+
+The format is defined and validated in `js/core/scenario.js`; this is the reference.
+
+| Field | Values | Default |
+|---|---|---|
+| `kind` | `"test_room"` or `"full_run"` | required |
+| `seed` | 1–32 characters of A–Z, 0–9, `-`. Leave it out: the environment then draws a fresh seed per episode | drawn |
+| `depth` | start floor, 1–99 ([floors](#floors-depth)) | 1 |
+| `player` | object, see below | game defaults |
+| `endOn` | list of end conditions besides death: `"room_clear"` (test rooms only; needs enemies or a boss), `"boss_kill"`, `"floor_exit"`. `[]`: only death and the time limit end the episode | `["room_clear"]` for a test room, `[]` for a full run |
+| `maxPlayFrames` | time limit in frames the agent can act in, 60 per second; 0 = none | 0 |
+
+Test rooms only:
+
+| Field | Values | Default |
+|---|---|---|
+| `enemies` | list of [enemy ids](#enemies-enemies), each a string or `{"id": ..., "count": n}`; at most 40 in total | none |
+| `boss` | a [boss id](#bosses-boss) instead of enemies. The room becomes a boss room (intro, boss bar, trapdoor) | none |
+| `layout` | a [layout id](#layouts-layout); `"generated"` (what the floor rolled for that room, props included; not with a boss); or `{"rows": [7 strings of 13 characters]}` from `.` floor, `e` spawn point, `r` rock, `b` block, `p` pit, `s` spikes. Own rows must pass the game's layout check: the middle of each wall (row 0 and 6 at column 6, column 0 and 12 at row 3) stays walkable and everything is reachable. A boss room needs a layout tagged `special` | `"empty"` |
+| `door` | `"up"`, `"right"`, `"down"` or `"left"`: the start room's door to enter by. A seed without a usable door there is skipped for another | first usable |
+
+`player`:
+
+| Field | Values |
 |---|---|
-| `single_bug` | One Bug, empty room, floor 1; ends on room clear, death, or 60 s of play. |
+| `items` | list of [passive](#passive-items-playeritems) and [active](#active-items-playeritems) item ids, given in order (one active item at a time: the last one stays) |
+| `health`, `maxHealth` | half hearts: `health` 1–24, `maxHealth` 2–24 and even (6 = three hearts, the start value) |
+| `guardrails` | 0–24, extra half hearts that absorb damage first |
+| `credits`, `pushes`, `approvals` | 0–99: money for shops, Force Pushes (bombs), approvals (keys for locked doors and chests) |
+| `god` | `true`: the player takes no damage |
+
+Notes, not part of the scenario (`load_scenario` drops them):
+
+| Key | Meaning |
+|---|---|
+| `description` | one line on what it sets up; the tests require it |
+| `observation` | `"none"` if the scenario uses content the fair observation has not reviewed yet (the "v2" column below). Such scenarios only run with `obs="none"`; the tests check that the note is right |
+
+## Adding a scenario
+
+1. Copy the example closest to what you want ([below](#scenarios-in-this-folder)), change it, keep `seed` out.
+2. Pick ids from [Valid ids](#valid-ids). If anything in it lacks a ✓ in the "v2" column, add `"observation": "none"`.
+3. Run `node js/node/catalog.js --write` to refresh the generated part of this README, then `npm test`: every file
+   here is validated and started on three seeds (`js/test/scenarios.test.js`).
+
+<!-- catalog:begin — generated by `node js/node/catalog.js --write`, do not edit by hand -->
+## Scenarios in this folder
+
+| scenario | kind | observation | what it sets up, and the pattern it shows |
+|---|---|---|---|
+| [`boss_monolith`](boss_monolith.json) | test_room | `none` | The Monolith, floor 1's boss, in an open arena; ends when it is beaten. Pattern: boss room; needs obs="none". |
+| [`bug_swarm`](bug_swarm.json) | test_room | v2 | Five Bugs around four rocks. Pattern: one enemy id with a count, a layout id from the game. |
+| [`custom_arena`](custom_arena.json) | test_room | v2 | A hand-drawn room with pits, spikes and rocks, and four spawn points. Pattern: your own layout rows. |
+| [`deep_floor_left`](deep_floor_left.json) | test_room | v2 | Three Bugs on floor 4, entered through the start room's left door. Pattern: depth and door (a seed without a usable left door is skipped for another). |
+| [`explore_god`](explore_god.json) | full_run | `none` | A run from floor 2 in god mode with ten Force Pushes: explore, open secret rooms, nothing can kill you. Pattern: full run, start depth, god mode; needs obs="none". |
+| [`full_run_floor1`](full_run_floor1.json) | full_run | `none` | A normal run that ends when the player takes floor 1's trapdoor, or after 10 minutes. Pattern: full run with an end condition; needs obs="none". |
+| [`generated_room`](generated_room.json) | test_room | v2 | A Bug and a Memory Leak in whatever room the floor rolled, props included. Pattern: layout "generated". |
+| [`half_heart`](half_heart.json) | test_room | v2 | Two Null Pointers against a player on half a heart: one touch ends it. Pattern: player health (in half hearts). |
+| [`loadout`](loadout.json) | test_room | v2 | Two Memory Leaks against a player with three items, credits and Force Pushes. Pattern: player items (passive and active) and resources. |
+| [`mixed_room`](mixed_room.json) | test_room | v2 | A Memory Leak, two Null Pointers and a Bug between pillars. Pattern: plain ids and counts mixed in one list. |
+| [`ranged_enemies`](ranged_enemies.json) | test_room | `none` | A Flaky Test and Spaghetti Code, which shoot back. Pattern: unreviewed enemies; needs obs="none". |
+| [`single_boss`](single_boss.json) | test_room | v2 | One enemy in an empty room on floor 6. Ends when the room is cleared, on death, or after 60 s of play. |
+| [`single_bug`](single_bug.json) | test_room | v2 | One Bug in an empty room on floor 1. Ends when the room is cleared, on death, or after 60 s of play. |
+| [`survive_chasers`](survive_chasers.json) | test_room | v2 | Three Null Pointers for 30 s; clearing the room does not end the episode. Pattern: endOn [] for a pure survival task with a time limit. |
+
+"observation" `none`: uses content the fair observation has not reviewed yet; run it with `obs="none"`.
+
+## Valid ids
+
+Read from the pinned game v1.0 (cc5cba4) and observation v2. "v2" says whether the content may appear while the fair observation is on (the default): ✓ = reviewed. Everything else needs `obs="none"` until its view is reviewed (docs/observation-spec.md).
+
+### Floors (`depth`)
+
+| depth | name |  |
+|---|---|---|
+| 1 | The Backlog | Where tickets go to die. |
+| 2 | Legacy Codebase | Written by someone who left in 2009. |
+| 3 | Forgotten Branches | It is probably for the best that these never got merged. |
+| 4 | Dependency Hell | node_modules now has its own gravitational field. |
+| 5 | Production | Don't touch anything. Especially on a Friday. |
+| 6 | Sandbox Borders | Nobody mentioned the cacti. Or the lack of water. |
+| 7 | The Training Data | It's mostly forum arguments. |
+| 8 | The Latent Space | Here be embeddings. |
+| 9 | Undefined Behavior | Anything can happen. Mostly bad things. |
+| 10 | /dev/null | Everything you send here is gone. Including you. |
+| 11 | The Context Limit | You've been here before. You don't remember. |
+
+Depths from 12 on repeat the eleven floors, named with a numeral (depth 12: "The Backlog II"); scenarios accept 1–99.
+
+### Enemies (`enemies`), 50
+
+| id | name | floors | behaviour | HP | tags | v2 |
+|---|---|---|---|---|---|---|
+| `bug` | Bug | 1–7 | wander | 8 | melee | ✓ |
+| `hallucination` | Hallucination | 1+ | mimic | 6 | fly | – |
+| `memory_leak` | Memory Leak | 1+ | split | 14 | melee | ✓ |
+| `null_pointer` | Null Pointer | 1–9 | fly_chase | 5 | fly, melee | ✓ |
+| `deprecation_warning` | Deprecation Warning | 2+ | orbit | 12 | fly, ranged | – |
+| `flaky_test` | Flaky Test | 2+ | blink | 10 | ranged | – |
+| `graphics_glitch` | Graphics Glitch | 2+ | glitch | 10 | melee | – |
+| `jira_ticket` | Jira Ticket | 2+ | turret | 18 | ranged, turret | – |
+| `merge_conflict` | Merge Conflict | 2+ | charge | 18 | charge | – |
+| `race_condition` | Race Condition | 2+ | zigzag | 6 | melee | – |
+| `spaghetti_code` | Spaghetti Code | 2+ | shooter | 14 | ranged | – |
+| `stack_trace` | Stack Trace | 2+ | stack_trace | 14 | ranged, melee | – |
+| `zombie_process` | Zombie Process | 2+ | revive | 14 | melee | – |
+| `cherry_pick` | Cherry-Pick | 3+ | cherry | 7 | melee | – |
+| `detached_head` | Detached HEAD | 3+ | detached_body | 12 | melee | – |
+| `orphan_commit` | Orphan Commit | 3+ | orphan | 6 |  | – |
+| `stale_branch` | Stale Branch | 3+ | stale | 12 | melee, charge | – |
+| `honeypot` | Honeypot | 4+ | honeypot | 22 | turret | – |
+| `rolling_release` | Rolling Release | 4+ | rolling_release | 18 | melee, charge | – |
+| `scope_creep` | Scope Creep | 4+ | grow | 10 | melee | – |
+| `dust_daemon` | Dust Daemon | 5+ | dust_daemon | 14 | fly, ranged | – |
+| `port_scanner` | Port Scanner | 5+ | port_scanner | 12 | ranged | – |
+| `rate_limiter` | Rate Limiter | 5+ | rate_limiter | 16 | ranged | – |
+| `rootkit` | Rootkit | 5+ | rootkit | 12 | ranged | – |
+| `spinlock` | Spinlock | 5+ | spinlock | 16 | melee, charge | – |
+| `trojan` | Trojan | 5+ | trojan | 20 | melee | – |
+| `dry_run` | Dry Run | 7+ | dry_run | 14 | melee, charge, ranged | – |
+| `rogue_agent` | Rogue Agent | 7+ | rogue_agent | 16 | ranged | – |
+| `cosine_similarity` | Cosine Similarity | 8+ | cosine_similarity | 14 | fly, ranged | – |
+| `dangling_pointer` | Dangling Pointer | 8+ | fly_chase | 5 | fly, melee | – |
+| `game_breaking_bug` | Game-breaking Bug | 8+ | wander | 8 | melee | – |
+| `heisenbug` | Heisenbug | 9+ | heisenbug | 12 | melee | – |
+| `bit_bucket` | Bit Bucket | 10+ | bit_bucket | 20 | ranged | – |
+| `lost_in_the_middle` | Lost in the Middle | 11+ | lost_in_the_middle | 14 | fly, ranged | – |
+| `overflow_buffer` | Overflow Buffer | 11+ | overflow_buffer | 18 | ranged | – |
+| `summarizer` | Summarizer | 11+ | summarizer | 16 |  | – |
+| `detached_head_tag` | Detached HEAD | never by itself | detached_tag | 6 |  | – |
+| `leaklet` | Leaklet | never by itself | chase | 4 |  | ✓ |
+| `loop_segment` | The Infinite Loop | never by itself | worm_segment | 1 |  | – |
+| `megalith_module` | Module | never by itself | megalith_module | 9 |  | – |
+| `microservice` | Microservice | never by itself | chase | 7 |  | – |
+| `nested_loop_part` | The Nested Infinite Loop | never by itself | nested_part | 1 |  | – |
+| `octo_arm` | Octopus Merge | never by itself | octo_arm | 1 |  | – |
+| `overflow_puddle` | Overflow Buffer | never by itself | overflow_puddle | 1 |  | – |
+| `popup_close` | Close Button | never by itself | popup_close | 1 |  | – |
+| `port_scanner_port` | Port Scanner | never by itself | scanner_port | 1 |  | – |
+| `ransom_key` | Key Fragment | never by itself | ransom_key | 10 |  | – |
+| `sp_tombstone` | Tombstone | never by itself | sp_tombstone | 99 |  | – |
+| `spinlock_segment` | Spinlock | never by itself | spinlock_segment | 1 |  | – |
+| `subagent` | Subagent | never by itself | subagent | 12 |  | – |
+
+"floors" is where the game spawns an enemy by itself. "never by itself" marks offspring and parts of other enemies and bosses (a Memory Leak splits into Leaklets, segments of a worm, boss modules); a test room accepts them, but some only make sense next to their parent. A test room can use any enemy on any floor.
+
+### Bosses (`boss`), 14
+
+| id | name | floors | HP | v2 |
+|---|---|---|---|---|
+| `monolith` | The Monolith | 1–6 | 360 | – |
+| `stakeholder` | The Stakeholder | 1–6 | 250 | – |
+| `infinite_loop` | The Infinite Loop | 2–7 | 300 | – |
+| `rogue_swarm` | Rogue Agent Swarm | 2–6 | 80 | – |
+| `octopus_merge` | Octopus Merge | 3+ | 300 | – |
+| `friday_deploy` | Friday Deploy | 4–7 | 240 | – |
+| `memory_hog` | The Memory Hog | 4–9 | 300 | – |
+| `reviewer` | The Antagonistic Reviewer | 4–9 | 340 | – |
+| `agent_swarm` | Agent Swarm (/xhigh) | 7+ | 115 | – |
+| `megalith` | The Megalith | 7+ | 460 | – |
+| `shareholder` | The Shareholder | 7+ | 380 | – |
+| `nested_loop` | The Nested Infinite Loop | 8+ | 450 | – |
+| `ransomware` | Ransomware | 8+ | 460 | – |
+| `system_prompt` | The System Prompt | 11+ | 500 | – |
+
+A boss room needs a layout tagged `special` (the default `empty` is one).
+
+### Passive items (`player.items`), 50
+
+| id | name | tagline | found in | v2 |
+|---|---|---|---|---|
+| `benchmark_overfitting` | Benchmark Overfitting | Damage way up vs bosses | treasure, boss | ✓ |
+| `blockchain` | Blockchain | Revolutionary | shop, secret | ✓ |
+| `calculator` | Calculator | Stats change with every fight | treasure, shop, boss | ✓ |
+| `chain_of_thought` | Chain of Thought | Piercing shots | treasure | ✓ |
+| `code_review` | Code Review | See enemy HP | treasure, shop | ✓ |
+| `cold_brew` | Cold Brew | Speed up | treasure, shop, boss | ✓ |
+| `confident_hallucination` | Confident Hallucination | Homing shots | treasure, secret | ✓ |
+| `constitutional_guardrails` | Constitutional Guardrails | Guardrails up | treasure, shop, boss | ✓ |
+| `context_window` | Extended Context Window | Range up | treasure, boss | ✓ |
+| `copy_paste` | Ctrl+C Ctrl+V | Duplicate shots | treasure, shop | ✓ |
+| `daily_standup` | Daily Standup | Freeze on entry | treasure, shop | ✓ |
+| `dark_mode` | Dark Mode | Spectral shots | treasure, secret | ✓ |
+| `deep_packet_inspection` | Deep Packet Inspection | Boss and secret rooms on the map | treasure, shop, boss | ✓ |
+| `electron_app` | Electron App | HP up, speed down | treasure, boss | ✓ |
+| `extra_gpu` | Extra GPU | Speed up, shot speed up | treasure, shop, boss | ✓ |
+| `feature_flag` | Feature Flag | Damage up. Sometimes. | treasure, shop | ✓ |
+| `few_shot` | Few-Shot Examples | Triple shot | treasure, boss | ✓ |
+| `garbage_collector` | Garbage Collector | Kills free up hearts | treasure, boss | ✓ |
+| `git_blame` | git blame | Damage up when desperate | treasure, secret | ✓ |
+| `graceful_degradation` | Graceful Degradation | HP up, damage down when hurt | treasure, boss | ✓ |
+| `kubernetes` | Kubernetes | All stats up? Probably? | treasure, boss, shop | ✓ |
+| `lgtm` | LGTM | +2 Approvals | treasure, shop | ✓ |
+| `linter` | Linter | Bouncing shots | treasure, shop | ✓ |
+| `long_term_support` | Long-Term Support | HP up, and up, and up | treasure, boss | ✓ |
+| `max_effort` | Max Effort | Thinking harder | treasure, boss | ✓ |
+| `mech_keyboard` | Mechanical Keyboard | Fire rate up | treasure, shop, boss | ✓ |
+| `microservices` | Microservices | Shots split on impact | treasure | ✓ |
+| `monorepo` | Monorepo | Shot size up | treasure, boss | ✓ |
+| `off_by_one` | Off-by-One Error | Damage up by 1. Or 0. Or 2. | treasure, secret | ✓ |
+| `offbrand_gpu` | Off-Brand GPU | Speed up, shot speed up... mostly | treasure, shop, boss | ✓ |
+| `on_call_pager` | On-Call Pager | Getting hit hits back | treasure, secret | ✓ |
+| `prompt_caching` | Prompt Caching | Fire rate way up | treasure, shop | ✓ |
+| `regex` | Regex | Now you have two problems | treasure, shop | ✓ |
+| `reserved_instances` | Reserved Instances | HP up. Paid upfront. | shop | ✓ |
+| `retry_backoff` | Retry with Backoff | Extra life | treasure, secret | ✓ |
+| `rlhf` | RLHF | HP up | treasure, boss, shop | ✓ |
+| `rubber_duck` | Rubber Duck | A friend who listens | treasure, shop | – (brings a familiar) |
+| `seed_funding` | Seed Funding | +15 Credits | treasure, boss, secret | ✓ |
+| `sharp_left_turn` | Sharp Left Turn | DMG and shot speed up, shots veer left | treasure, shop, boss | ✓ |
+| `stack_overflow` | Stack Overflow Printout | Damage up | treasure, shop, boss | ✓ |
+| `swap_file` | Swap File | Spare hearts become HP | treasure, secret | ✓ |
+| `tab_completion` | Tab Completion | Fire rate up, range down | treasure, shop, boss | ✓ |
+| `technical_debt` | Technical Debt | Damage way up… for now | treasure, secret | ✓ |
+| `temperature` | Temperature 1.5 | Damage up, aim… creative | treasure, secret | ✓ |
+| `the_cloud` | The Cloud | Flight | treasure, secret | ✓ |
+| `to_the_moon` | To the Moon | Hover over floor hazards | treasure, shop, boss | ✓ |
+| `unit_tests` | Unit Tests | Orbital protection | treasure, shop | – (brings a familiar) |
+| `vibe_coding` | Vibe Coding | Damage: vibes | treasure, secret | ✓ |
+| `von_neumann` | Von Neumann Architecture | HP and guardrail up, everything slower | treasure, shop, boss | ✓ |
+| `yaml_config` | YAML Config | Stats shuffled | treasure, secret | ✓ |
+
+### Active items (`player.items`), 5
+
+| id | name | tagline | charge | found in | v2 |
+|---|---|---|---|---|---|
+| `compact` | /compact | Heal 2 hearts | 6 | treasure, shop | ✓ |
+| `ctrl_z` | Ctrl+Z | Undo damage | 3 | treasure, shop, secret | ✓ |
+| `regenerate_response` | Regenerate Response | Reroll items | 2 | treasure, shop | ✓ |
+| `rm_rf` | rm -rf node_modules | Damage all enemies | 4 | treasure, shop, boss | ✓ |
+| `stop_generating` | Stop Generating | Freeze enemies | 3 | treasure, shop | ✓ |
+
+The player holds one active item; listing several keeps the last. A new active item starts fully charged.
+
+### Layouts (`layout`), 30
+
+Besides these ids: `"generated"` (what the floor rolled for that room, props included) or your own rows.
+`normal` layouts are for ordinary fights, `special` ones are open arenas, also allowed for boss rooms.
+Legend: `.` floor, `e` spawn point, `r` rock, `b` block, `p` pit, `s` spikes; the four doors are in the middle of each wall.
+
+| id | tags | id | tags | id | tags |
+|---|---|---|---|---|---|
+| `empty` | normal, special | `special_corner_rocks` | special | `special_pillars` | special |
+| `special_corner_pits` | special | `four_rocks` | normal | `arena_corners` | normal |
+| `scatter` | normal | `pillars` | normal | `center_block` | normal |
+| `rock_clusters` | normal | `rock_ring` | normal | `bunkers` | normal |
+| `rocks_and_spikes` | normal | `pit_lanes` | normal | `pit_cross` | normal |
+| `pit_moat` | normal | `big_pit` | normal | `pit_island` | normal |
+| `snake_pits` | normal | `corner_pits` | normal | `spike_strips` | normal |
+| `spike_cross` | normal | `spike_lanes` | normal | `block_maze` | normal |
+| `plus_corridors` | normal | `twin_walls` | normal | `rock_bands` | normal |
+| `checker` | normal | `zigzag_blocks` | normal | `vault` | normal |
+
+<details><summary>What each layout looks like</summary>
+
+```
+empty              special_corner_rocks  special_pillars
+.............      rr.........rr      .............
+.............      r...........r      .b.........b.
+.............      .............      .............
+.............      .............      .............
+.............      .............      .............
+.............      r...........r      .b.........b.
+.............      rr.........rr      .............
+```
+```
+special_corner_pits  four_rocks         arena_corners
+pp.........pp      .............      ss.........ss
+p...........p      ..r.......r..      s...........s
+.............      .............      ....e...e....
+.............      ......e......      .............
+.............      .............      ....e...e....
+p...........p      ..r.......r..      s...........s
+pp.........pp      .............      ss.........ss
+```
+```
+scatter            pillars            center_block
+.............      .............      .............
+..r....b...r.      .b..b...b..b.      .e.........e.
+.....e.......      .............      .....rrr.....
+..b.......r..      ...e.....e...      .....rbr.....
+.......e.....      .............      .....rrr.....
+.r...b....r..      .b..b...b..b.      .e.........e.
+.............      .............      .............
+```
+```
+rock_clusters      rock_ring          bunkers
+.............      .............      .............
+.rr.......rr.      ...rrr.rrr...      .bb.......bb.
+.r..e...e..r.      ..r.......r..      .b..e...e..b.
+.............      ..r...e...r..      .............
+.r..e...e..r.      ..r.......r..      .b..e...e..b.
+.rr.......rr.      ...rrr.rrr...      .bb.......bb.
+.............      .e.........e.      .............
+```
+```
+rocks_and_spikes   pit_lanes          pit_cross
+.............      .............      .............
+..rs.....sr..      .ppp.....ppp.      .....p.p.....
+..r...e...r..      .............      .e...p.p...e.
+.............      ...e.....e...      ..pppp.pppp..
+..r...e...r..      .............      .e...p.p...e.
+..rs.....sr..      .ppp.....ppp.      .....p.p.....
+.............      .............      .............
+```
+```
+pit_moat           big_pit            pit_island
+.............      .............      .............
+.e.........e.      .e.........e.      .e.ppp.ppp.e.
+..ppp...ppp..      ....ppppp....      ...p.....p...
+..ppp.e.ppp..      ....ppppp....      ...p..e..p...
+..ppp...ppp..      ....ppppp....      ...p.....p...
+.e.........e.      .e.........e.      .e.ppp.ppp.e.
+.............      .............      .............
+```
+```
+snake_pits         corner_pits        spike_strips
+.............      pp.........pp      .............
+.ppppp.......      p...........p      .e....e....e.
+.......ppppp.      ...e.....e...      .............
+..pppp....e..      .............      ..sss...sss..
+..e....ppppp.      ...e.....e...      .............
+.ppppp.......      p...........p      .e....e....e.
+.............      pp.........pp      .............
+```
+```
+spike_cross        spike_lanes        block_maze
+.............      .............      .............
+..e.......e..      .ssss...ssss.      .bbb.b.b.bbb.
+......s......      .....e.e.....      ...b.....b...
+....sssss....      .............      .e.b..e..b.e.
+......s......      .....e.e.....      ...b.....b...
+..e.......e..      .ssss...ssss.      .bbb.b.b.bbb.
+.............      .............      .............
+```
+```
+plus_corridors     twin_walls         rock_bands
+bbbb.....bbbb      .............      .............
+bbbb.....bbbb      ...r.....r...      .e....e....e.
+.e.........e.      ...r..e..r...      rrrr.r.r.rrrr
+.............      ...r.....r...      .............
+.e.........e.      ...r..e..r...      rrrr.r.r.rrrr
+bbbb.....bbbb      ...r.....r...      .e....e....e.
+bbbb.....bbbb      .e.........e.      .............
+```
+```
+checker            zigzag_blocks      vault
+.............      .............      .............
+..r.r...r.r..      .bb...e..bb..      .e.rr...rr.e.
+.e.r.....r.e.      ...bb....b...      ...r.....r...
+.............      .....b.......      .....rbr.....
+.e.r.....r.e.      ...b....bb...      ...r.....r...
+..r.r...r.r..      ..bb..e...bb.      .e.rr...rr.e.
+.............      .............      .............
+```
+
+</details>
+<!-- catalog:end -->

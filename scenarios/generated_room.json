@@ -1,0 +1,10 @@
+{
+  "description": "A Bug and a Memory Leak in whatever room the floor rolled, props included. Pattern: layout \"generated\".",
+  "kind": "test_room",
+  "layout": "generated",
+  "enemies": [
+    "bug",
+    "memory_leak"
+  ],
+  "maxPlayFrames": 3600
+}

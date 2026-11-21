@@ -1,0 +1,20 @@
+{
+  "description": "Two Memory Leaks against a player with three items, credits and Force Pushes. Pattern: player items (passive and active) and resources.",
+  "kind": "test_room",
+  "enemies": [
+    {
+      "id": "memory_leak",
+      "count": 2
+    }
+  ],
+  "player": {
+    "items": [
+      "cold_brew",
+      "chain_of_thought",
+      "ctrl_z"
+    ],
+    "credits": 5,
+    "pushes": 3
+  },
+  "maxPlayFrames": 3600
+}

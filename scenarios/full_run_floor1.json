@@ -1,0 +1,9 @@
+{
+  "description": "A normal run that ends when the player takes floor 1's trapdoor, or after 10 minutes. Pattern: full run with an end condition; needs obs=\"none\".",
+  "observation": "none",
+  "kind": "full_run",
+  "endOn": [
+    "floor_exit"
+  ],
+  "maxPlayFrames": 36000
+}

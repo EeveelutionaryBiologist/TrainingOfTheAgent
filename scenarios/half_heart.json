@@ -1,0 +1,15 @@
+{
+  "description": "Two Null Pointers against a player on half a heart: one touch ends it. Pattern: player health (in half hearts).",
+  "kind": "test_room",
+  "enemies": [
+    {
+      "id": "null_pointer",
+      "count": 2
+    }
+  ],
+  "player": {
+    "maxHealth": 6,
+    "health": 1
+  },
+  "maxPlayFrames": 3600
+}

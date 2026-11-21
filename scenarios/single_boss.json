@@ -1,0 +1,9 @@
+{
+  "description": "One enemy in an empty room on floor 6. Ends when the room is cleared, on death, or after 60 s of play.",
+  "kind": "test_room",
+  "depth": 6,
+  "layout": "empty",
+  "enemies": ["dangling_pointer"],
+  "endOn": ["room_clear"],
+  "maxPlayFrames": 3600
+}

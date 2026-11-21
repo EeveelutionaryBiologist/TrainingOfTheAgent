@@ -1,0 +1,12 @@
+{
+  "description": "Three Null Pointers for 30 s; clearing the room does not end the episode. Pattern: endOn [] for a pure survival task with a time limit.",
+  "kind": "test_room",
+  "enemies": [
+    {
+      "id": "null_pointer",
+      "count": 3
+    }
+  ],
+  "endOn": [],
+  "maxPlayFrames": 1800
+}

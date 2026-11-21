@@ -1,0 +1,11 @@
+{
+  "description": "The Monolith, floor 1's boss, in an open arena; ends when it is beaten. Pattern: boss room; needs obs=\"none\".",
+  "observation": "none",
+  "kind": "test_room",
+  "boss": "monolith",
+  "layout": "special_pillars",
+  "endOn": [
+    "boss_kill"
+  ],
+  "maxPlayFrames": 7200
+}

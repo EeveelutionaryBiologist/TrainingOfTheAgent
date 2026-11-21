@@ -1,0 +1,12 @@
+{
+  "description": "Five Bugs around four rocks. Pattern: one enemy id with a count, a layout id from the game.",
+  "kind": "test_room",
+  "layout": "four_rocks",
+  "enemies": [
+    {
+      "id": "bug",
+      "count": 5
+    }
+  ],
+  "maxPlayFrames": 3600
+}

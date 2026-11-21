@@ -1,0 +1,13 @@
+{
+  "description": "Three Bugs on floor 4, entered through the start room's left door. Pattern: depth and door (a seed without a usable left door is skipped for another).",
+  "kind": "test_room",
+  "depth": 4,
+  "door": "left",
+  "enemies": [
+    {
+      "id": "bug",
+      "count": 3
+    }
+  ],
+  "maxPlayFrames": 3600
+}
